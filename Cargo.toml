@@ -3,6 +3,16 @@ name = "onnx-parser"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "kimchi"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
+anyhow = "1.0.90"
+instant = "0.1.13"
+log = "0.4.22"
+scale = "0.1.0"
+serde = "1.0.210"
+thiserror = "1.0.64"
 tract = "0.21.7"
 tract-onnx = "0.21.7"

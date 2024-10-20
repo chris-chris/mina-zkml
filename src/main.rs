@@ -6,7 +6,6 @@ fn main() {
     print_model_structure(model);
 }
 
-
 fn load_model(
     path: String,
 ) -> Result<
@@ -35,11 +34,21 @@ fn print_model_structure(
         let inputs = node.inputs.len();
         let outputs = node.outputs.len();
 
-        println!("Node {}/{}: {} (inputs: {}, outputs: {})", node_id + 1, total_nodes, op_name, inputs, outputs);
+        println!(
+            "Node {}/{}: {} (inputs: {}, outputs: {})",
+            node_id + 1,
+            total_nodes,
+            op_name,
+            inputs,
+            outputs
+        );
 
         for (i, input) in node.inputs.iter().enumerate() {
             if let Ok(fact) = graph.model().outlet_fact(*input) {
-                println!("  Input  {}: Shape: {:?}, Type: {:?}", i, fact.shape, fact.datum_type);
+                println!(
+                    "  Input  {}: Shape: {:?}, Type: {:?}",
+                    i, fact.shape, fact.datum_type
+                );
             } else {
                 println!("  Input  {}: Unknown", i);
             }
@@ -49,4 +58,3 @@ fn print_model_structure(
 
     println!("Total nodes: {}", total_nodes);
 }
-

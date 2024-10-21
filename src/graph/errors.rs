@@ -12,4 +12,7 @@ pub enum GraphError {
     //Missing Node
     #[error("missing node in model")]
     MissingNode(usize),
+    //Invalid Shape
+    #[error("invalid input shape")]
+    InvalidInputShape,
 }

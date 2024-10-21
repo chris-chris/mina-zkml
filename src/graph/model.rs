@@ -24,28 +24,20 @@ pub struct ParsedNodes {
 }
 
 impl ParsedNodes {
-    /// Returns the number of the computational graph's inputs
     pub fn num_inputs(&self) -> usize {
-        let input_nodes = self.inputs.iter();
-        input_nodes.len()
+        self.inputs.len()
     }
 
-    /// Input types
-    pub fn get_input_types(&self) -> Result<Vec<InputType>, GraphError> {
-        self.inputs
+    pub fn get_output_scales(&self) -> Result<Vec<i32>, GraphError> {
+        self.outputs
             .iter()
-            .map(|o| {
-                match self
-                    .nodes
-                    .get(o)
-                    .ok_or(GraphError::MissingNode(*o))?
-                    .opkind()
-                {
-                    SupportedOp::Input(Input { datum_type, .. }) => Ok(datum_type.clone()),
-                    _ => Err(GraphError::InvalidInputTypes),
-                }
+            .map(|&(node, slot)| {
+                self.nodes
+                    .get(&node)
+                    .ok_or(GraphError::MissingNode(node))
+                    .map(|n| n.out_scales()[slot])
             })
-            .collect::<Result<Vec<_>, _>>()
+            .collect()
     }
 }
 
@@ -56,8 +48,10 @@ pub enum NodeType {
         model: Box<Model>,
         inputs: Vec<OutletId>,
         idx: usize,
-        out_dims: Vec<usize>,
+        out_dims: Vec<Vec<usize>>,
         out_scales: Vec<i32>,
+        output_mappings: Vec<Vec<OutputMapping>>,
+        input_mappings: Vec<InputMapping>,
     },
 }
 
@@ -69,11 +63,17 @@ impl NodeType {
         }
     }
 
-    /// Returns the operation kind of the node (if any).
-    pub fn opkind(&self) -> SupportedOp {
+    pub fn inputs(&self) -> Vec<Outlet> {
         match self {
-            NodeType::Node(n) => n.opkind.clone(),
-            NodeType::SubGraph { .. } => SupportedOp::Unknown(Unknown),
+            NodeType::Node(node) => node.inputs.clone(),
+            NodeType::SubGraph { inputs, .. } => inputs.iter().map(|i| (i.node, i.slot)).collect(),
+        }
+    }
+
+    pub fn out_dims(&self) -> Vec<Vec<usize>> {
+        match self {
+            NodeType::Node(node) => vec![node.out_dims.clone()],
+            NodeType::SubGraph { out_dims, .. } => out_dims.clone(),
         }
     }
 }
@@ -100,41 +100,25 @@ pub struct VarVisibility {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum InputMapping {
-    ///
     Full,
-    ///
     State,
-    ///
-    Stacked {
-        ///
-        axis: usize,
-        ///
-        chunk: usize,
-    },
+    Stacked { axis: usize, chunk: usize },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum OutputMapping {
-    ///
     Single {
-        ///
         outlet: usize,
-        ///
         is_state: bool,
     },
-    ///
     Stacked {
-        ///
         outlet: usize,
-        ///
         axis: usize,
-        ///
         is_state: bool,
     },
 }
 
 impl OutputMapping {
-    ///
     pub fn is_state(&self) -> bool {
         match self {
             OutputMapping::Single { is_state, .. } => *is_state,
@@ -142,7 +126,6 @@ impl OutputMapping {
         }
     }
 
-    ///
     pub fn outlet(&self) -> usize {
         match self {
             OutputMapping::Single { outlet, .. } => *outlet,
@@ -157,7 +140,7 @@ fn input_state_idx(input_mappings: &[InputMapping]) -> Vec<usize> {
         .enumerate()
         .filter(|(_, r)| matches!(r, InputMapping::State))
         .map(|(index, _)| index)
-        .collect::<Vec<_>>()
+        .collect()
 }
 
 fn output_state_idx(output_mappings: &[Vec<OutputMapping>]) -> Vec<usize> {
@@ -165,7 +148,7 @@ fn output_state_idx(output_mappings: &[Vec<OutputMapping>]) -> Vec<usize> {
         .iter()
         .flatten()
         .filter_map(|x| if x.is_state() { Some(x.outlet()) } else { None })
-        .collect::<Vec<_>>()
+        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -176,55 +159,53 @@ pub enum Visibility {
 }
 
 impl Model {
-    pub fn load_onnx_using_tract<P: AsRef<Path>>(path: P) -> Result<TractResult, GraphError> {
+    pub fn load_onnx_using_tract<P: AsRef<Path>>(
+        path: P,
+        run_args: &RunArgs,
+    ) -> Result<TractResult, GraphError> {
         use tract_onnx::tract_hir::internal::GenericFactoid;
-
-        let mut reader = match std::fs::File::open(path) {
-            Ok(file) => file,
-            Err(_) => return Err(GraphError::UnableToReadModel),
-        };
-        let mut model = match tract_onnx::onnx().model_for_read(&mut reader) {
-            Ok(model) => model,
-            Err(_) => return Err(GraphError::UnableToReadModel),
-        };
-
-        //TOOD: Variable HashMap from Run Args
-        let variables: HashMap<String, usize> = HashMap::new();
-
-        //TODO: Impment Run args right now its dummy
-        let run_args = RunArgs {
-            variables: HashMap::new(),
-        };
-
+        let mut reader = std::fs::File::open(path).map_err(|_| GraphError::UnableToReadModel)?;
+        let mut model = tract_onnx::onnx()
+            .model_for_read(&mut reader)
+            .map_err(|_| GraphError::UnableToReadModel)?;
         for (i, id) in model.clone().inputs.iter().enumerate() {
             let input = model.node_mut(id.node);
             let mut fact: InferenceFact = input.outputs[0].fact.clone();
 
             for (i, x) in fact.clone().shape.dims().enumerate() {
                 if matches!(x, GenericFactoid::Any) {
-                    let batch_size = match variables.get("batch_size") {
-                        Some(x) => x,
-                        None => return Err(GraphError::MissingBatchSize),
-                    };
+                    let batch_size = run_args
+                        .variables
+                        .get("batch_size")
+                        .ok_or(GraphError::MissingBatchSize)?;
                     fact.shape
                         .set_dim(i, tract_onnx::prelude::TDim::Val(*batch_size as i64));
                 }
             }
-            model.set_input_fact(i, fact);
+            model
+                .set_input_fact(i, fact)
+                .map_err(|_| GraphError::UnableToReadModel)?;
         }
-
         for (i, _) in model.clone().outputs.iter().enumerate() {
-            model.set_output_fact(i, InferenceFact::default());
+            model
+                .set_output_fact(i, InferenceFact::default())
+                .map_err(|_| GraphError::UnableToReadModel)?;
         }
-
         let mut symbol_values = SymbolValues::default();
         for (symbol, value) in run_args.variables.iter() {
-            let symbol = model.symbols.sym(symbol);
-            symbol_values = symbol_values.with(&symbol, *value as i64);
-            debug!("set {} to {}", symbol, value);
+            let symbol = model
+                .symbols
+                .get(symbol);
+            match symbol {
+                Some(symbol) => {
+                    symbol_values.set(&symbol.clone(), *value as i64);
+                }
+                None => {
+                    println!("Symbol not found");
+                }
+            }
         }
-
-        // Note: do not optimize the model, as the layout will depend on underlying hardware
+        println!("{:?}", symbol_values);
         let typed_model = model
             .into_typed()
             .map_err(|_| GraphError::UnableToReadModel)?
@@ -232,37 +213,42 @@ impl Model {
             .map_err(|_| GraphError::UnableToReadModel)?
             .into_decluttered()
             .map_err(|_| GraphError::UnableToReadModel)?;
-
+        println!("Model loaded successfully");
         Ok((typed_model, symbol_values))
     }
 
-    // pub fn load_onnx_model<P: AsRef<Path>>(
-    //     path: P,
-    //     visibility: VarVisibility,
-    // ) -> Result<ParsedNodes, GraphError> {
-    //     let start_time = instant::Instant::now();
+    pub fn load_onnx_model<P: AsRef<Path>>(
+        path: P,
+        visibility: VarVisibility,
+        run_args: &RunArgs,
+    ) -> Result<Self, GraphError> {
+        let start_time = instant::Instant::now();
 
-    //     let (graph, symbol_values) = Model::load_onnx_using_tract(path)?;
+        let (graph, symbol_values) = Self::load_onnx_using_tract(path, run_args)?;
 
-    //     //TODO: Implement RunArgs
-    //     let run_args = RunArgs {
-    //         variables: HashMap::from([
-    //             ("batch_size".to_string(), 1),
-    //             ("sequence_length".to_string(), 128),
-    //             ("feature_size".to_string(), 64),
-    //             ("input_scale".to_string(), 1),
-    //             ("param_scale".to_string(), 1),
-    //             ("scale_rebase_multipler".to_string(), 1),
-    //         ]),
-    //     };
+        let parsed_nodes = Self::nodes_from_graph(&graph, visibility.clone(), symbol_values)?;
 
-    //     //TODO: Implment Scale
-    //     let scales: VarScale = VarScale {
-    //         input: 1,
-    //         output: 1,
-    //         param: 1,
-    //     };
-    // }
+        let model = Model {
+            graph: ParsedNodes {
+                nodes: parsed_nodes,
+                inputs: graph
+                    .input_outlets()
+                    .iter()
+                    .flat_map(|o| o.iter().map(|outlet| outlet.node))
+                    .collect(),
+                outputs: graph
+                    .output_outlets()
+                    .iter()
+                    .flat_map(|o| o.iter().map(|outlet| (outlet.node, outlet.slot)))
+                    .collect(),
+            },
+            visibility,
+        };
+
+        debug!("Model loading took: {:?}", start_time.elapsed());
+
+        Ok(model)
+    }
 
     pub fn nodes_from_graph(
         graph: &Graph<TypedFact, Box<dyn TypedOp>>,
@@ -272,10 +258,8 @@ impl Model {
         use super::utilities::node_output_shapes;
 
         let mut nodes = BTreeMap::<usize, NodeType>::new();
-        let mut input_idx = 0;
 
         for (i, n) in graph.nodes.iter().enumerate() {
-            // Extract the slope layer hyperparams
             match n.op().downcast_ref::<Scan>() {
                 Some(b) => {
                     let model = b.body.clone();
@@ -290,159 +274,249 @@ impl Model {
                         })
                         .collect::<Result<Vec<_>, GraphError>>()?;
 
-                    let mut input_mappings = vec![];
-                    for mapping in &b.input_mapping {
-                        match mapping {
+                    let input_mappings = b
+                        .input_mapping
+                        .iter()
+                        .map(|mapping| match mapping {
                             tract_onnx::tract_hir::ops::scan::InputMapping::Scan(info) => {
-                                input_mappings.push(InputMapping::Stacked {
+                                InputMapping::Stacked {
                                     axis: info.axis,
                                     chunk: info.chunk as usize,
-                                });
+                                }
                             }
                             tract_onnx::tract_hir::ops::scan::InputMapping::State => {
-                                input_mappings.push(InputMapping::State);
+                                InputMapping::State
                             }
                             tract_onnx::tract_hir::ops::scan::InputMapping::Full => {
-                                input_mappings.push(InputMapping::Full);
+                                InputMapping::Full
                             }
-                        }
-                    }
+                        })
+                        .collect::<Vec<_>>();
 
-                    let input_state_idx = input_state_idx(&input_mappings);
-
-                    let mut output_mappings = vec![];
-                    for (i, mapping) in b.output_mapping.iter().enumerate() {
-                        let mut mappings = vec![];
-                        if let Some(outlet) = mapping.last_value_slot {
-                            mappings.push(OutputMapping::Single {
-                                outlet,
-                                is_state: mapping.state,
-                            });
-                        } else if mapping.state {
-                            mappings.push(OutputMapping::Single {
-                                outlet: i,
-                                is_state: mapping.state,
-                            });
-                        }
-                        if let Some(last) = mapping.scan {
-                            mappings.push(OutputMapping::Stacked {
-                                outlet: last.0,
-                                axis: last.1.axis,
-                                is_state: false,
-                            });
-                        }
-
-                        output_mappings.push(mappings);
-                    }
-
-                    let output_state_idx = output_state_idx(&output_mappings);
-
-                    let mut output_scale_override = HashMap::new();
-                    // if input_state_idx and output_state_idx have mismatched scales we need to rebase the scale of the output node
-                    for (input_idx, output_idx) in input_state_idx.iter().zip(output_state_idx) {
-                        let input_scale = input_scales[*input_idx];
-                        // output mappings is a vec of vec. we need to find the outer index of the output node we want to rebase.
-                        let mut traversed_len = 0;
-                        for (outer_idx, mappings) in output_mappings.iter().enumerate() {
-                            let mapping_len = mappings.len();
-                            if traversed_len + mapping_len > output_idx {
-                                let output_node_idx = b.body.outputs[outer_idx].node;
-                                output_scale_override.insert(output_node_idx, input_scale);
+                    let output_mappings = b
+                        .output_mapping
+                        .iter()
+                        .enumerate()
+                        .map(|(i, mapping)| {
+                            let mut mappings = vec![];
+                            if let Some(outlet) = mapping.last_value_slot {
+                                mappings.push(OutputMapping::Single {
+                                    outlet,
+                                    is_state: mapping.state,
+                                });
+                            } else if mapping.state {
+                                mappings.push(OutputMapping::Single {
+                                    outlet: i,
+                                    is_state: mapping.state,
+                                });
                             }
-                            traversed_len += mapping_len;
-                        }
-                    }
+                            if let Some(last) = mapping.scan {
+                                mappings.push(OutputMapping::Stacked {
+                                    outlet: last.0,
+                                    axis: last.1.axis,
+                                    is_state: false,
+                                });
+                            }
+                            mappings
+                        })
+                        .collect::<Vec<_>>();
 
-                    let subgraph_nodes = Self::nodes_from_graph(
-                        &model,
-                        visibility,
-                        symbol_values,
-                        // Some(input_scales.clone()),
-                        // Some(output_scale_override),
-                    )?;
+                    let subgraph_nodes =
+                        Self::nodes_from_graph(&model, visibility.clone(), symbol_values.clone())?;
 
                     let subgraph = ParsedNodes {
                         nodes: subgraph_nodes,
-                        inputs: model.inputs.iter().map(|o| o.node).collect(),
-                        outputs: model.outputs.iter().map(|o| (o.node, o.slot)).collect(),
-                    };
-
-                    let om = Model {
-                        graph: subgraph,
-                        visibility: visibility.clone(),
+                        inputs: graph
+                            .input_outlets()
+                            .iter()
+                            .flat_map(|o| o.iter().map(|outlet| outlet.node))
+                            .collect(),
+                        outputs: graph
+                            .output_outlets()
+                            .iter()
+                            .flat_map(|o| o.iter().map(|outlet| (outlet.node, outlet.slot)))
+                            .collect(),
                     };
 
                     let out_dims = node_output_shapes(n, &symbol_values)?;
 
-                    let mut output_scales = BTreeMap::new();
-
-                    for (i, _mapping) in b.output_mapping.iter().enumerate() {
-                        for mapping in b.output_mapping.iter() {
-                            if let Some(outlet) = mapping.last_value_slot {
-                                output_scales.insert(outlet, om.graph.get_output_scales()?[i]);
-                            }
-                            if let Some(last) = mapping.scan {
-                                output_scales.insert(last.0, om.graph.get_output_scales()?[i]);
-                            }
-                        }
-                    }
-
-                    let out_scales = output_scales.into_values().collect_vec();
+                    let out_scales = subgraph.get_output_scales()?;
 
                     nodes.insert(
                         i,
                         NodeType::SubGraph {
-                            model: om,
-                            inputs: n.inputs.iter().map(|i| (i.node, i.slot)).collect_vec(),
+                            model: Box::new(Model {
+                                graph: subgraph,
+                                visibility: visibility.clone(),
+                            }),
+                            inputs: n.inputs.clone(),
                             idx: i,
-                            output_mappings,
-                            input_mappings,
                             out_dims,
                             out_scales,
+                            output_mappings,
+                            input_mappings,
                         },
                     );
                 }
                 None => {
-                    let mut n =
-                        Node::new(n.clone(), &mut nodes, scales, i, symbol_values, run_args)?;
-                    if let Some(ref scales) = override_input_scales {
-                        if let Some(inp) = n.opkind.get_input() {
-                            let scale = scales[input_idx];
-                            n.opkind = SupportedOp::Input(Input {
-                                scale,
-                                datum_type: inp.datum_type,
-                            });
-                            input_idx += 1;
-                            n.out_scale = scale;
-                        }
-                    }
-                    if let Some(ref scales) = override_output_scales {
-                        if scales.contains_key(&i) {
-                            let scale_diff = n.out_scale - scales[&i];
-                            n.opkind = if scale_diff > 0 {
-                                RebaseScale::rebase(
-                                    n.opkind,
-                                    scales[&i],
-                                    n.out_scale,
-                                    1,
-                                    run_args.div_rebasing,
-                                )
-                            } else {
-                                RebaseScale::rebase_up(
-                                    n.opkind,
-                                    scales[&i],
-                                    n.out_scale,
-                                    run_args.div_rebasing,
-                                )
-                            };
-                            n.out_scale = scales[&i];
-                        }
-                    }
-                    nodes.insert(i, NodeType::Node(n));
+                    let node = Node {
+                        op: n.op.clone(),
+                        inputs: n.inputs.iter().map(|i| (i.node, i.slot)).collect(),
+                        out_dims: node_output_shapes(n, &symbol_values)?
+                            .pop()
+                            .unwrap_or_default(),
+                        out_scale: 1, // Default scale
+                        id: i,
+                    };
+                    nodes.insert(i, NodeType::Node(node));
                 }
             }
         }
-        //Self::remove_unused_nodes(&mut nodes);
         Ok(nodes)
     }
+
+    pub fn run_prediction(&self, inputs: Vec<Tensor>) -> Result<Vec<Tensor>, GraphError> {
+        if inputs.len() != self.graph.inputs.len() {
+            return Err(GraphError::InvalidInputShape);
+        }
+
+        let mut intermediate_results: BTreeMap<usize, Vec<Tensor>> = BTreeMap::new();
+
+        // Initialize with input tensors
+        for (idx, input) in self.graph.inputs.iter().zip(inputs.into_iter()) {
+            intermediate_results.insert(*idx, vec![input]);
+        }
+
+        // Traverse nodes in topological order
+        for (idx, node) in self.graph.nodes.iter() {
+            match node {
+                NodeType::Node(n) => {
+                    let input_tensors: Vec<Tensor> = n
+                        .inputs
+                        .iter()
+                        .map(|&(node, slot)| {
+                            intermediate_results
+                                .get(&node)
+                                .and_then(|tensors| tensors.get(slot))
+                                .cloned()
+                                .ok_or(GraphError::MissingNode(node))
+                        })
+                        .collect::<Result<Vec<Tensor>, GraphError>>()?;
+
+                    let outputs = self.execute_operation(&n.op, input_tensors)?;
+                    intermediate_results.insert(*idx, outputs);
+                }
+                NodeType::SubGraph {
+                    model,
+                    inputs,
+                    input_mappings,
+                    output_mappings,
+                    ..
+                } => {
+                    let input_tensors: Vec<Tensor> = inputs
+                        .iter()
+                        .map(|input| {
+                            intermediate_results
+                                .get(&input.node)
+                                .and_then(|tensors| tensors.get(input.slot))
+                                .cloned()
+                                .ok_or(GraphError::MissingNode(input.node))
+                        })
+                        .collect::<Result<Vec<Tensor>, GraphError>>()?;
+
+                    let mut subgraph_inputs = Vec::new();
+                    for (tensor, mapping) in input_tensors.iter().zip(input_mappings.iter()) {
+                        match mapping {
+                            InputMapping::Full => subgraph_inputs.push(tensor.clone()),
+                            InputMapping::State => subgraph_inputs.push(tensor.clone()),
+                            InputMapping::Stacked { axis, chunk } => {
+                                let mut sliced_tensors = Vec::new();
+                                let dim_size = tensor.shape()[*axis];
+                                for start in (0..dim_size).step_by(*chunk) {
+                                    let end = std::cmp::min(start + chunk, dim_size);
+                                    let slice = tensor.slice(*axis, start, end).unwrap();
+                                    sliced_tensors.push(slice);
+                                }
+                                subgraph_inputs.extend(sliced_tensors);
+                            }
+                        }
+                    }
+
+                    let subgraph_outputs = model.run_prediction(subgraph_inputs)?;
+
+                    let mut outputs = Vec::new();
+                    for mapping in output_mappings.iter() {
+                        for m in mapping {
+                            match m {
+                                OutputMapping::Single { outlet, .. } => {
+                                    outputs.push(subgraph_outputs[*outlet].clone());
+                                }
+                                OutputMapping::Stacked { outlet, axis, .. } => {
+                                    let stacked =
+                                        Tensor::stack_tensors(*axis, &subgraph_outputs[*outlet..])
+                                            .unwrap();
+                                    outputs.push(stacked);
+                                }
+                            }
+                        }
+                    }
+
+                    intermediate_results.insert(*idx, outputs);
+                }
+            }
+        }
+
+        // Collect output tensors
+        let outputs: Result<Vec<Tensor>, GraphError> = self
+            .graph
+            .outputs
+            .iter()
+            .map(|&(node, slot)| {
+                intermediate_results
+                    .get(&node)
+                    .and_then(|tensors| tensors.get(slot))
+                    .cloned()
+                    .ok_or(GraphError::MissingNode(node))
+            })
+            .collect();
+
+        outputs
+    }
+
+    fn execute_operation(&self, op: &Box<dyn TypedOp>, inputs: Vec<Tensor>) -> Result<Vec<Tensor>, GraphError> {
+        let mut model = TypedModel::default();
+        let mut node_inputs = tvec!();
+        for (idx, input) in inputs.iter().enumerate() {
+            let fact = tensor_to_fact(input);
+            let input = model.add_source(format!("input_{}", idx), fact).unwrap();
+            node_inputs.push(input);
+        }
+        let node = model.wire_node(
+            "operation",
+            op.clone(),
+            &node_inputs
+        ).unwrap();
+    
+        for (idx, &output) in node.iter().enumerate() {
+            model.set_output_fact(idx, model.outlet_fact(output).unwrap().clone());
+        }
+    
+        let plan = SimplePlan::new(model).unwrap();
+        
+        let input_values: TVec<TValue> = inputs.into_iter().map(|t| t.into_tvalue()).collect();
+        
+        let outputs = plan.run(input_values).unwrap();
+        
+        Ok(outputs
+            .iter()
+            .map(|v| v.clone().into_tensor())
+            .collect()
+        )
+    }
+}
+
+fn tensor_to_fact(tensor: &Tensor) -> TypedFact {
+    let shape: Vec<usize> = tensor.shape().into();
+    let datum_type = tensor.datum_type();
+    TypedFact::dt_shape(datum_type, shape)
 }

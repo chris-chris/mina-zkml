@@ -9,8 +9,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anyhow = "1.0.90"
+image = "0.25.4"
 instant = "0.1.13"
 log = "0.4.22"
+ndarray = "0.16.1"
 scale = "0.1.0"
 serde = "1.0.210"
 thiserror = "1.0.64"

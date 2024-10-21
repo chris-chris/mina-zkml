@@ -1,9 +1,43 @@
+use std::collections::HashMap;
+use kimchi::graph::model::{Model, RunArgs, VarVisibility, Visibility};
+use log::debug;
 use tract_onnx::prelude::*;
+use image::{self, ImageBuffer, Rgb};
+use ndarray::{Array4, CowArray};
 
 fn main() {
     let model_path = "/Users/sshivaditya/PROJECTS/onnx-parser/models/resnet101-v1-7.onnx";
-    let model = load_model(model_path.to_string()).unwrap();
-    print_model_structure(model);
+    let model_native = load_model(model_path.to_string()).unwrap();
+    // print_model_structure(model);
+    let run_args = RunArgs {
+        variables: HashMap::from([
+            ("batch_size".to_string(), 1),
+            ("sequence_length".to_string(), 128),
+        ]),
+    };
+
+    let visibility = VarVisibility {
+        input: Visibility::Private,
+        output: Visibility::Public,
+    };
+
+    let model = Model::load_onnx_model(model_path, visibility, &run_args).unwrap();
+
+    // Load and preprocess the image
+    let image_path = "/Users/sshivaditya/PROJECTS/mina-zkml/test data/dog.jpeg";
+    let input_tensor = load_and_preprocess_image(image_path).unwrap();
+
+    // Run inference on native tract model
+    println!("Running inference on native tract model...");
+    let native_output = model_native.run(tvec!(input_tensor.clone().into_tvalue())).unwrap();
+    let native_output_array = native_output[0].to_array_view::<f32>().unwrap().into_dimensionality::<ndarray::Ix2>().unwrap();
+    print_top_5(&native_output_array);
+
+    // Run inference on custom Model
+    println!("\nRunning inference on custom Model...");
+    let custom_output = model.run_prediction(vec![input_tensor]).unwrap();
+    let custom_output_array = custom_output[0].to_array_view::<f32>().unwrap().into_dimensionality::<ndarray::Ix2>().unwrap();
+    print_top_5(&custom_output_array);
 }
 
 fn load_model(
@@ -20,41 +54,25 @@ fn load_model(
     Ok(model)
 }
 
-fn print_model_structure(
-    graph: SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>,
-) {
-    println!("Model Structure:");
-    println!("================");
-
-    let nodes = graph.model().nodes();
-    let total_nodes = nodes.len();
-
-    for (node_id, node) in nodes.iter().enumerate() {
-        let op_name = node.op().name();
-        let inputs = node.inputs.len();
-        let outputs = node.outputs.len();
-
-        println!(
-            "Node {}/{}: {} (inputs: {}, outputs: {})",
-            node_id + 1,
-            total_nodes,
-            op_name,
-            inputs,
-            outputs
-        );
-
-        for (i, input) in node.inputs.iter().enumerate() {
-            if let Ok(fact) = graph.model().outlet_fact(*input) {
-                println!(
-                    "  Input  {}: Shape: {:?}, Type: {:?}",
-                    i, fact.shape, fact.datum_type
-                );
-            } else {
-                println!("  Input  {}: Unknown", i);
-            }
-        }
-        println!();
+fn load_and_preprocess_image(path: &str) -> Result<Tensor, Box<dyn std::error::Error>> {
+    let img: ImageBuffer<Rgb<u8>, Vec<u8>> = image::open(path)?.resize_exact(224, 224, image::imageops::FilterType::Triangle).to_rgb8();
+    let mut array = Array4::zeros((1, 3, 224, 224));
+    
+    for (x, y, pixel) in img.enumerate_pixels() {
+        array[[0, 0, y as usize, x as usize]] = (pixel[0] as f32 / 255.0 - 0.485) / 0.229;
+        array[[0, 1, y as usize, x as usize]] = (pixel[1] as f32 / 255.0 - 0.456) / 0.224;
+        array[[0, 2, y as usize, x as usize]] = (pixel[2] as f32 / 255.0 - 0.406) / 0.225;
     }
 
-    println!("Total nodes: {}", total_nodes);
+    Ok(Tensor::from(array.into_owned()))
+}
+
+fn print_top_5(output: &ndarray::ArrayView2<f32>) {
+    let mut indices: Vec<usize> = (0..output.len()).collect();
+    indices.sort_unstable_by(|&i, &j| output[[0, j]].partial_cmp(&output[[0, i]]).unwrap());
+
+    println!("Top 5 predictions:");
+    for &idx in indices.iter().take(5) {
+        println!("Class {}: {:.2}%", idx, output[[0, idx]] * 100.0);
+    }
 }

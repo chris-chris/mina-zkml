@@ -15,4 +15,7 @@ pub enum GraphError {
     //Invalid Shape
     #[error("invalid input shape")]
     InvalidInputShape,
+    //Invalid Operation
+    #[error("invalid operation")]
+    InvalidOperation,
 }

@@ -43,10 +43,10 @@ fn main() {
     // print_top_5(&native_output_array);
 
     // Run inference on custom Model
-    println!("\nRunning inference on custom Model...");
-    let custom_output = model.run_prediction(tvec!(input_tensor.clone().into_tvalue())).unwrap();
-    let custom_output_array = custom_output[0].to_array_view::<f32>().unwrap().into_dimensionality::<ndarray::Ix2>().unwrap();
-    print_top_5(&custom_output_array);
+    // println!("\nRunning inference on custom Model...");
+    // let custom_output = model.run_prediction(tvec!(input_tensor.clone().into_tvalue())).unwrap();
+    // let custom_output_array = custom_output[0].to_array_view::<f32>().unwrap().into_dimensionality::<ndarray::Ix2>().unwrap();
+    // print_top_5(&custom_output_array);
 }
 
 fn load_model(

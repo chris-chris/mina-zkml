@@ -2,13 +2,8 @@ use super::errors::GraphError;
 use instant;
 use log::debug;
 use serde::{Deserialize, Serialize};
-use tract_onnx::tract_core::plan::SessionState;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::path::Path;
-use tract_data::internal::tract_smallvec::SmallVec;
-use tract_itertools::Itertools;
-use tract_onnx::{prelude::*, tract_core};
-use tract_onnx::tract_hir::ops::scan::Scan;
+use std::{collections::{BTreeMap, HashMap}, path::Path};
+use tract_onnx::{prelude::*, tract_hir::ops::scan::Scan};
 
 pub type Outlet = (usize, usize);
 type TractResult = (Graph<TypedFact, Box<dyn TypedOp>>, SymbolValues);
@@ -21,9 +16,9 @@ pub struct Model {
 
 #[derive(Clone, Debug)]
 pub struct ParsedNodes {
-    nodes: BTreeMap<usize, NodeType>,
-    inputs: Vec<usize>,
-    outputs: Vec<Outlet>,
+    pub nodes: BTreeMap<usize, NodeType>,
+    pub inputs: Vec<usize>,
+    pub outputs: Vec<Outlet>,
 }
 
 impl ParsedNodes {
@@ -83,11 +78,11 @@ impl NodeType {
 
 #[derive(Clone, Debug)]
 pub struct Node {
-    op: Box<dyn TypedOp>,
-    inputs: Vec<Outlet>,
-    out_dims: Vec<usize>,
-    out_scale: i32,
-    id: usize,
+    pub op: Box<dyn TypedOp>,
+    pub inputs: Vec<Outlet>,
+    pub out_dims: Vec<usize>,
+    pub out_scale: i32,
+    pub id: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -135,23 +130,6 @@ impl OutputMapping {
             OutputMapping::Stacked { outlet, .. } => *outlet,
         }
     }
-}
-
-fn input_state_idx(input_mappings: &[InputMapping]) -> Vec<usize> {
-    input_mappings
-        .iter()
-        .enumerate()
-        .filter(|(_, r)| matches!(r, InputMapping::State))
-        .map(|(index, _)| index)
-        .collect()
-}
-
-fn output_state_idx(output_mappings: &[Vec<OutputMapping>]) -> Vec<usize> {
-    output_mappings
-        .iter()
-        .flatten()
-        .filter_map(|x| if x.is_state() { Some(x.outlet()) } else { None })
-        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq)]

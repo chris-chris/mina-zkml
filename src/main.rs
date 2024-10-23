@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use std::collections::HashMap;
 use kimchi::graph::model::{Model, RunArgs, VarVisibility, Visibility};
 use log::debug;
@@ -5,12 +7,17 @@ use tract_onnx::prelude::*;
 use image::{self, ImageBuffer, Rgb};
 use ndarray::{Array4, CowArray};
 
+
 fn main() {
     let model_path = "/Users/sshivaditya/PROJECTS/onnx-parser/models/resnet101-v1-7.onnx";
     let model_native = load_model(model_path.to_string()).unwrap();
     // print_model_structure(model);
     let run_args = RunArgs {
         variables: HashMap::from([
+            ("N".to_string(), 1),
+            ("C".to_string(), 3),
+            ("H".to_string(), 224),
+            ("W".to_string(), 224),
             ("batch_size".to_string(), 1),
             ("sequence_length".to_string(), 128),
         ]),
@@ -21,7 +28,8 @@ fn main() {
         output: Visibility::Public,
     };
 
-    let model = Model::load_onnx_model(model_path, visibility, &run_args).unwrap();
+    let (model, symbol_values) = Model::load_onnx_using_tract(model_path, &run_args).unwrap();
+    let nodes = Model::nodes_from_graph(&model, visibility, symbol_values).unwrap();
 
     // Load and preprocess the image
     let image_path = "/Users/sshivaditya/PROJECTS/mina-zkml/test data/dog.jpeg";
@@ -34,10 +42,10 @@ fn main() {
     print_top_5(&native_output_array);
 
     // Run inference on custom Model
-    println!("\nRunning inference on custom Model...");
-    let custom_output = model.run_prediction(vec![input_tensor]).unwrap();
-    let custom_output_array = custom_output[0].to_array_view::<f32>().unwrap().into_dimensionality::<ndarray::Ix2>().unwrap();
-    print_top_5(&custom_output_array);
+    // println!("\nRunning inference on custom Model...");
+    // let custom_output = model.run_prediction(vec![input_tensor]).unwrap();
+    // let custom_output_array = custom_output[0].to_array_view::<f32>().unwrap().into_dimensionality::<ndarray::Ix2>().unwrap();
+    // print_top_5(&custom_output_array);
 }
 
 fn load_model(

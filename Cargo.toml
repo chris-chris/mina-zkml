@@ -12,9 +12,8 @@ anyhow = "1.0.90"
 image = "0.25.4"
 instant = "0.1.13"
 log = "0.4.22"
-ndarray = "0.16.1"
+ndarray = "0.15.4"
 scale = "0.1.0"
-serde = "1.0.210"
+serde = { version = "1.0.210", features = ["derive"] }
 thiserror = "1.0.64"
-tract = "0.21.7"
-tract-onnx = "0.21.7"
+tract-onnx = { git = "https://github.com/sonos/tract/", rev = "40c64319291184814d9fea5fdf4fa16f5a4f7116", default-features = false }

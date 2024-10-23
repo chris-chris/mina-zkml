@@ -11,9 +11,6 @@ pub fn node_output_shapes(
     let outputs = node.outputs.to_vec();
     for output in outputs {
         let shape = output.fact.shape;
-        println!("Symbol Values: {:?}", symbol_values);
-        println!("Shape: {:?}", shape.to_vec());
-        println!("Shape: {:?}", shape.eval_to_usize(symbol_values));
         let shape = shape.eval_to_usize(symbol_values).unwrap();
         let mv = shape.to_vec();
         shapes.push(mv)

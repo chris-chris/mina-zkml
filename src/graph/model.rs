@@ -1,9 +1,8 @@
-use crate::graph::node::{CustomNode, SupportedOp};
-
 use super::errors::GraphError;
 use instant;
 use log::debug;
 use serde::{Deserialize, Serialize};
+use tract_data::internal::tract_smallvec::SmallVec;
 use tract_itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -46,7 +45,7 @@ impl ParsedNodes {
 
 #[derive(Clone, Debug)]
 pub enum NodeType {
-    Node(CustomNode),
+    Node(Node),
     SubGraph {
         model: Box<Model>,
         inputs: Vec<tract_onnx::prelude::OutletId>,
@@ -81,14 +80,14 @@ impl NodeType {
     }
 }
 
-// #[derive(Clone, Debug)]
-// pub struct CustomNode {
-//     op: Box<dyn TypedOp>,
-//     inputs: Vec<Outlet>,
-//     out_dims: Vec<usize>,
-//     out_scale: i32,
-//     id: usize,
-// }
+#[derive(Clone, Debug)]
+pub struct Node {
+    op: Box<dyn TypedOp>,
+    inputs: Vec<Outlet>,
+    out_dims: Vec<usize>,
+    out_scale: i32,
+    id: usize,
+}
 
 #[derive(Clone, Debug)]
 pub struct RunArgs {
@@ -161,19 +160,6 @@ pub enum Visibility {
     Fixed,
 }
 
-impl Into<Box<dyn TypedOp>> for SupportedOp {
-    fn into(self) -> Box<dyn TypedOp> {
-        match self {
-            SupportedOp::Unknown => Box::new(tract_onnx::tract_hir::ops::dummy::Dummy::new()),
-            SupportedOp::Linear { op_type, params } => todo!(),
-            SupportedOp::Nonlinear { op_type, params } => todo!(),
-            SupportedOp::Input { name, shape } => todo!(),
-            SupportedOp::Constant { values, shape } => todo!(),
-            // Add other SupportedOp variants here
-        }
-    }
-}
-
 impl Model {
     pub fn load_onnx_using_tract<P: AsRef<Path>>(
         path: P,
@@ -223,7 +209,6 @@ impl Model {
         for (symbol, value) in run_args.variables.iter() {
             let symbol = model.symbol_table.sym(symbol);
             symbol_values = symbol_values.with(&symbol, *value as i64);
-            println!("set {} to {}", symbol, value);
             debug!("set {} to {}", symbol, value);
         }
 
@@ -257,24 +242,11 @@ impl Model {
         Ok(parsed_nodes)
     }
 
-    pub fn new(path: &str) -> Result<Self, GraphError> {
-        let run_args = RunArgs {
-            variables: HashMap::from([
-                ("batch_size".to_string(), 1),
-                ("sequence_length".to_string(), 128),
-            ]),
-        };
-
-        let visibility = VarVisibility {
-            input: Visibility::Private,
-            output: Visibility::Public,
-        };
-
+    pub fn new(path: &str, run_args: &RunArgs, visibility: &VarVisibility) -> Result<Self, GraphError> {
         let parsed_nodes = Self::load_onnx_model(path, &run_args, &visibility)?;
-
         Ok(Model {
             graph: parsed_nodes,
-            visibility,
+            visibility: visibility.clone(),
         })
     }
 
@@ -412,15 +384,14 @@ impl Model {
                     );
                 }
                 None => {
-                    let node = CustomNode {
-                        opkind: SupportedOp::Unknown,
+                    let node = Node {
+                        op: n.op.clone(),
                         inputs: n.inputs.iter().map(|i| (i.node, i.slot)).collect(),
                         out_dims: node_output_shapes(n, &symbol_values)?
                             .pop()
                             .unwrap_or_default(),
                         out_scale: 1, // Default scale
-                        idx: i,
-                        num_uses: n.outputs.iter().map(|o| o.successors.len()).sum(),
+                        id: i,
                     };
                     nodes.insert(i, NodeType::Node(node));
                 }
@@ -429,18 +400,18 @@ impl Model {
         Ok(nodes)
     }
 
-    pub fn run_prediction(&self, inputs: Vec<Tensor>) -> Result<Vec<Tensor>, GraphError> {
+    pub fn run_prediction(&self, inputs: SmallVec<[TValue; 4]>) -> Result<Vec<Tensor>, GraphError> {
         if inputs.len() != self.graph.inputs.len() {
             return Err(GraphError::InvalidInputShape);
         }
 
         let mut intermediate_results: BTreeMap<usize, Vec<Tensor>> = BTreeMap::new();
-
+        println!("Input shapes {:?}", inputs.to_vec());
         // Initialize with input tensors
         for (idx, input) in self.graph.inputs.iter().zip(inputs.into_iter()) {
-            intermediate_results.insert(*idx, vec![input]);
+            intermediate_results.insert(*idx, vec![input.into_tensor()]);
         }
-
+        println!("Length of intermediate results {:?}", intermediate_results.len());
         // Traverse nodes in topological order
         for (idx, node) in self.graph.nodes.iter() {
             match node {
@@ -456,8 +427,10 @@ impl Model {
                                 .ok_or(GraphError::MissingNode(node))
                         })
                         .collect::<Result<Vec<Tensor>, GraphError>>()?;
-                    
-                    let outputs = self.execute_operation(&n.opkind, input_tensors)?;
+                    println!("Executing operation {:?}", n.op);
+                    println!("Input tensors {:?}", input_tensors);
+                    println!("Input shapes {:?}", input_tensors.iter().map(|t| t.shape()).collect::<Vec<_>>());
+                    let outputs = self.execute_operation(&n.op, input_tensors)?;
                     intermediate_results.insert(*idx, outputs);
                 }
                 NodeType::SubGraph {
@@ -496,6 +469,7 @@ impl Model {
                         }
                     }
 
+                    let subgraph_inputs: SmallVec<[TValue; 4]> = subgraph_inputs.into_iter().map(|t| t.into_tvalue()).collect();
                     let subgraph_outputs = model.run_prediction(subgraph_inputs)?;
 
                     let mut outputs = Vec::new();
@@ -539,7 +513,7 @@ impl Model {
 
     fn execute_operation(
         &self,
-        op: &SupportedOp,
+        op: &Box<dyn TypedOp>,
         inputs: Vec<Tensor>,
     ) -> Result<Vec<Tensor>, GraphError> {
         let mut model = TypedModel::default();

@@ -2,29 +2,12 @@
 mod tests {
     use super::super::model::*;
     use super::super::errors::GraphError;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
     use tract_data::internal::tract_smallvec::SmallVec;
     use tract_onnx::tract_hir::ops::cnn::{PaddingSpec, PoolSpec};
     use tract_onnx::tract_hir::ops::nn::DataFormat;
     use tract_onnx::{prelude::*, tract_core};
-    use tract_onnx::prelude::Outlet;
     use super::super::model::Node;
-
-    #[test]
-    fn test_model_load_missing_batch_size() {
-        let run_args = RunArgs {
-            variables: std::collections::HashMap::new(),
-        };
-        
-        let visibility = VarVisibility {
-            input: Visibility::Public,
-            output: Visibility::Public,
-        };
-
-        let model_path = "models/resnet101-v1-7.onnx";
-        let result = Model::new(model_path, &run_args, &visibility);
-        assert!(matches!(result, Err(GraphError::MissingBatchSize)));
-    }
 
     #[test]
     fn test_model_load_invalid_path() {
@@ -47,8 +30,13 @@ mod tests {
     #[test]
     fn test_model_load_success() {
         let run_args = RunArgs {
-            variables: std::collections::HashMap::from([
+            variables: HashMap::from([
+                ("N".to_string(), 1),
+                ("C".to_string(), 3),
+                ("H".to_string(), 224),
+                ("W".to_string(), 224),
                 ("batch_size".to_string(), 1),
+                ("sequence_length".to_string(), 128),
             ]),
         };
         

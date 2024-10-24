@@ -5,27 +5,36 @@ use serde::{Deserialize, Serialize};
 use std::{collections::{BTreeMap, HashMap}, path::Path};
 use tract_onnx::{prelude::*, tract_hir::ops::scan::Scan};
 
+/// Represents a node output connection as (node_index, output_slot)
 pub type Outlet = (usize, usize);
+/// Result type for tract operations containing the graph and symbol values
 type TractResult = (Graph<TypedFact, Box<dyn TypedOp>>, SymbolValues);
 
+/// Main model structure containing the parsed graph and variable visibility settings
 #[derive(Clone, Debug)]
 pub struct Model {
     pub graph: ParsedNodes,
     pub visibility: VarVisibility,
 }
 
+/// Represents the parsed neural network graph structure
 #[derive(Clone, Debug)]
 pub struct ParsedNodes {
+    /// Map of node indices to their corresponding node types
     pub nodes: BTreeMap<usize, NodeType>,
+    /// Indices of input nodes
     pub inputs: Vec<usize>,
+    /// List of output connections (node_index, slot)
     pub outputs: Vec<Outlet>,
 }
 
 impl ParsedNodes {
+    /// Returns the number of input nodes in the graph
     pub fn num_inputs(&self) -> usize {
         self.inputs.len()
     }
 
+    /// Returns a vector of output scales for all output nodes
     pub fn get_output_scales(&self) -> Result<Vec<i32>, GraphError> {
         self.outputs
             .iter()
@@ -39,9 +48,12 @@ impl ParsedNodes {
     }
 }
 
+/// Represents different types of nodes in the graph
 #[derive(Clone, Debug)]
 pub enum NodeType {
+    /// A regular computation node
     Node(Node),
+    /// A subgraph node (typically used for control flow operations like loops)
     SubGraph {
         model: Box<Model>,
         inputs: Vec<tract_onnx::prelude::OutletId>,
@@ -54,6 +66,7 @@ pub enum NodeType {
 }
 
 impl NodeType {
+    /// Returns the output scales for the node
     pub fn out_scales(&self) -> &[i32] {
         match self {
             NodeType::Node(node) => std::slice::from_ref(&node.out_scale),
@@ -61,6 +74,7 @@ impl NodeType {
         }
     }
 
+    /// Returns the input connections for the node
     pub fn inputs(&self) -> Vec<Outlet> {
         match self {
             NodeType::Node(node) => node.inputs.clone(),
@@ -68,6 +82,7 @@ impl NodeType {
         }
     }
 
+    /// Returns the output dimensions for the node
     pub fn out_dims(&self) -> Vec<Vec<usize>> {
         match self {
             NodeType::Node(node) => vec![node.out_dims.clone()],
@@ -76,39 +91,55 @@ impl NodeType {
     }
 }
 
+/// Represents a regular computation node in the graph
 #[derive(Clone, Debug)]
 pub struct Node {
+    /// The operation to be performed by this node
     pub op: Box<dyn TypedOp>,
+    /// Input connections to this node
     pub inputs: Vec<Outlet>,
+    /// Output dimensions
     pub out_dims: Vec<usize>,
+    /// Output scale factor
     pub out_scale: i32,
+    /// Unique identifier for the node
     pub id: usize,
 }
 
+/// Arguments for running the model
 #[derive(Clone, Debug)]
 pub struct RunArgs {
+    /// Map of variable names to their values
     pub variables: HashMap<String, usize>,
 }
 
+/// Controls visibility of variables in the model
 #[derive(Clone, Debug)]
 pub struct VarVisibility {
     pub input: Visibility,
     pub output: Visibility,
 }
 
+/// Defines how inputs are mapped in subgraphs
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum InputMapping {
+    /// Input is passed through completely
     Full,
+    /// Input represents a state
     State,
+    /// Input is stacked along an axis
     Stacked { axis: usize, chunk: usize },
 }
 
+/// Defines how outputs are mapped in subgraphs
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum OutputMapping {
+    /// Single output connection
     Single {
         outlet: usize,
         is_state: bool,
     },
+    /// Output stacked along an axis
     Stacked {
         outlet: usize,
         axis: usize,
@@ -117,6 +148,7 @@ pub enum OutputMapping {
 }
 
 impl OutputMapping {
+    /// Returns whether this output represents a state
     pub fn is_state(&self) -> bool {
         match self {
             OutputMapping::Single { is_state, .. } => *is_state,
@@ -124,6 +156,7 @@ impl OutputMapping {
         }
     }
 
+    /// Returns the output slot index
     pub fn outlet(&self) -> usize {
         match self {
             OutputMapping::Single { outlet, .. } => *outlet,
@@ -132,11 +165,12 @@ impl OutputMapping {
     }
 }
 
+/// Variable visibility levels
 #[derive(Clone, Debug, PartialEq)]
 pub enum Visibility {
-    Public,
-    Private,
-    Fixed,
+    Public,   // Visible externally
+    Private,  // Internal only
+    Fixed,    // Cannot be modified
 }
 
 impl Model {
@@ -204,6 +238,7 @@ impl Model {
         Ok((typed_model, symbol_values))
     }
 
+    /// Loads and parses an ONNX model into the internal graph representation
     pub fn load_onnx_model(
         path: &str,
         run_args: &RunArgs,
@@ -221,6 +256,7 @@ impl Model {
         Ok(parsed_nodes)
     }
 
+    /// Creates a new Model instance from an ONNX file
     pub fn new(
         path: &str,
         run_args: &RunArgs,
@@ -233,6 +269,7 @@ impl Model {
         })
     }
 
+    /// Converts a tract graph into the internal node representation
     pub fn nodes_from_graph(
         graph: &Graph<TypedFact, Box<dyn TypedOp>>,
         visibility: VarVisibility,
@@ -245,7 +282,7 @@ impl Model {
         for (idx, node) in graph.nodes.iter().enumerate() {
             match node.op().downcast_ref::<Scan>() {
                 Some(scan_op) => {
-                    println!("Processing scan node {}", idx);
+                    debug!("Processing scan node {}", idx);
 
                     // Process input mappings
                     let mut input_mappings = vec![];
@@ -329,7 +366,7 @@ impl Model {
                     );
                 }
                 None => {
-                    println!("Processing regular node {}", idx);
+                    debug!("Processing regular node {}", idx);
                     // Create regular node
                     let out_dims = node_output_shapes(node, &symbol_values)?
                         .pop()
@@ -384,7 +421,7 @@ impl Model {
         }
 
         if !missing_nodes.is_empty() {
-            println!("Missing nodes: {:?}", missing_nodes);
+            debug!("Missing nodes: {:?}", missing_nodes);
             return Err(GraphError::MissingNode(missing_nodes[0]));
         }
 

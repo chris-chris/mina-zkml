@@ -18,4 +18,7 @@ pub enum GraphError {
     //Invalid Operation
     #[error("invalid operation")]
     InvalidOperation,
+    //Missing Parameter
+    #[error("missing parameter")]
+    MissingParameter,
 }

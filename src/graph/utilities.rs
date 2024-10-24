@@ -1,5 +1,5 @@
 use super::errors::GraphError;
-use tract_onnx::prelude::{DatumType, Node as OnnxNode, SymbolValues, TypedFact, TypedOp};
+use tract_onnx::prelude::{Node as OnnxNode, SymbolValues, TypedFact, TypedOp};
 
 
 
@@ -11,7 +11,7 @@ pub fn node_output_shapes(
     let outputs = node.outputs.to_vec();
     for output in outputs {
         let shape = output.fact.shape;
-        let shape = shape.eval_to_usize(symbol_values).unwrap();
+        let shape = shape.eval_to_usize(symbol_values).map_err(|_| GraphError::InvalidInputShape)?;
         let mv = shape.to_vec();
         shapes.push(mv)
     }

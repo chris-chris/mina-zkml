@@ -3,6 +3,7 @@ mod tests {
     use super::super::model::*;
     use super::super::errors::GraphError;
     use std::collections::{BTreeMap, HashMap};
+    use std::env;
     use tract_data::internal::tract_smallvec::SmallVec;
     use tract_onnx::tract_hir::ops::cnn::{PaddingSpec, PoolSpec};
     use tract_onnx::tract_hir::ops::nn::DataFormat;
@@ -28,7 +29,7 @@ mod tests {
     }
 
     #[test]
-    fn test_model_load_success() {
+    fn test_model_load_success()  -> Result<(), Box<dyn std::error::Error>> {
         let run_args = RunArgs {
             variables: HashMap::from([
                 ("N".to_string(), 1),
@@ -45,12 +46,22 @@ mod tests {
             output: Visibility::Public,
         };
 
-        let model_path = "models/resnet101-v1-7.onnx";
-        let result = Model::new(model_path, &run_args, &visibility);
+        // Get current directory path
+        let current_dir = env::current_dir()?;
+        println!("current directory: {:?}", current_dir.display());
+            
+        let model_path = current_dir.join("models/resnet101-v1-7.onnx");
+        println!("Model path: {:?}", model_path);
+
+        let model_path_str = model_path.to_str().ok_or("Invalid model path")?;
+
+        let result = Model::new(model_path_str, &run_args, &visibility);
         assert!(result.is_ok());
+        println!("result: {:?}", result);
 
         let model = result.unwrap();
         assert!(model.graph.num_inputs() > 0);
+        Ok(())
     }
 
     #[test]

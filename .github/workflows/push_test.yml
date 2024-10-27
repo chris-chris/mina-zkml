@@ -1,0 +1,66 @@
+# CI workflow for Rust project
+name: CI
+
+# Trigger workflow on push to main and feature branches
+on:
+  push:
+    branches:
+      - main
+      - 'feature-**'
+
+jobs:
+  test_phaser:
+    name: Build and Test Phaser
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v3  # Updated to v3 for better performance and security
+
+      # Setup Rust toolchain
+      - name: Setup Rust toolchain
+        run: |
+          rustup update
+          rustup component add clippy
+          rustup install nightly
+          
+      # Display version information
+      - name: Display toolchain info
+        run: |
+          cargo --version --verbose
+          rustc --version
+          cargo clippy --version
+
+      # Caching dependencies to speed up builds
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            phaser/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # Code formatting and linting
+      - name: Check formatting and lint
+        working-directory: ./phaser
+        run: |
+          cargo fmt -- --check
+          cargo clippy -- -D warnings
+
+      # Run tests
+      - name: Run tests
+        working-directory: ./phaser
+        run: |
+          cargo check
+          cargo test --all
+
+      # Build release
+      - name: Build release
+        working-directory: ./phaser
+        run: cargo build --release

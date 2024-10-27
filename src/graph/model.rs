@@ -425,11 +425,7 @@ impl Model {
                                 },
                                 visibility: visibility.clone(),
                             }),
-                            inputs: node
-                                .inputs
-                                .iter()
-                                .map(SerializableOutletId::from)
-                                .collect(),
+                            inputs: node.inputs.iter().map(SerializableOutletId::from).collect(),
                             idx,
                             out_dims,
                             out_scales: vec![1; scan_op.output_mapping.len()],

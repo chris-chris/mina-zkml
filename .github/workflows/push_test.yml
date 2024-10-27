@@ -1,7 +1,5 @@
-# CI workflow for Rust project
 name: CI
 
-# Trigger workflow on push to main and feature branches
 on:
   push:
     branches:
@@ -14,25 +12,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout repository
       - name: Checkout repository
-        uses: actions/checkout@v3  # Updated to v3 for better performance and security
+        uses: actions/checkout@v3
 
-      # Setup Rust toolchain
+      - name: Verify directory structure
+        run: |
+          pwd
+          ls -la
+          echo "Current directory contents:"
+          find . -maxdepth 2 -type d
+
       - name: Setup Rust toolchain
         run: |
           rustup update
-          rustup component add clippy
+          rustup component add clippy rustfmt
           rustup install nightly
           
-      # Display version information
       - name: Display toolchain info
         run: |
           cargo --version --verbose
           rustc --version
           cargo clippy --version
 
-      # Caching dependencies to speed up builds
       - name: Cache dependencies
         uses: actions/cache@v3
         with:
@@ -41,26 +42,77 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            phaser/target/
+            target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # Code formatting and linting
-      - name: Check formatting and lint
-        working-directory: ./phaser
+      - name: Check formatting
         run: |
+          if [ -d "phaser" ]; then
+            cd phaser
+          elif [ -d "../phaser" ]; then
+            cd ../phaser
+          else
+            echo "Error: phaser directory not found"
+            pwd
+            ls -la
+            exit 1
+          fi
           cargo fmt -- --check
+
+      - name: Run clippy
+        run: |
+          if [ -d "phaser" ]; then
+            cd phaser
+          elif [ -d "../phaser" ]; then
+            cd ../phaser
+          else
+            echo "Error: phaser directory not found"
+            pwd
+            ls -la
+            exit 1
+          fi
           cargo clippy -- -D warnings
 
-      # Run tests
-      - name: Run tests
-        working-directory: ./phaser
+      - name: Check build
         run: |
+          if [ -d "phaser" ]; then
+            cd phaser
+          elif [ -d "../phaser" ]; then
+            cd ../phaser
+          else
+            echo "Error: phaser directory not found"
+            pwd
+            ls -la
+            exit 1
+          fi
           cargo check
+
+      - name: Run tests
+        run: |
+          if [ -d "phaser" ]; then
+            cd phaser
+          elif [ -d "../phaser" ]; then
+            cd ../phaser
+          else
+            echo "Error: phaser directory not found"
+            pwd
+            ls -la
+            exit 1
+          fi
           cargo test --all
 
-      # Build release
       - name: Build release
-        working-directory: ./phaser
-        run: cargo build --release
+        run: |
+          if [ -d "phaser" ]; then
+            cd phaser
+          elif [ -d "../phaser" ]; then
+            cd ../phaser
+          else
+            echo "Error: phaser directory not found"
+            pwd
+            ls -la
+            exit 1
+          fi
+          cargo build --release

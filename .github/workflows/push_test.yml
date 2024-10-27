@@ -7,20 +7,13 @@ on:
       - 'feature-**'
 
 jobs:
-  test_phaser:
-    name: Build and Test Phaser
+  test:
+    name: Build and Test
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
-      - name: Verify directory structure
-        run: |
-          pwd
-          ls -la
-          echo "Current directory contents:"
-          find . -maxdepth 2 -type d
 
       - name: Setup Rust toolchain
         run: |
@@ -48,71 +41,16 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Check formatting
-        run: |
-          if [ -d "phaser" ]; then
-            cd phaser
-          elif [ -d "../phaser" ]; then
-            cd ../phaser
-          else
-            echo "Error: phaser directory not found"
-            pwd
-            ls -la
-            exit 1
-          fi
-          cargo fmt -- --check
+        run: cargo fmt -- --check
 
       - name: Run clippy
-        run: |
-          if [ -d "phaser" ]; then
-            cd phaser
-          elif [ -d "../phaser" ]; then
-            cd ../phaser
-          else
-            echo "Error: phaser directory not found"
-            pwd
-            ls -la
-            exit 1
-          fi
-          cargo clippy -- -D warnings
+        run: cargo clippy -- -D warnings
 
       - name: Check build
-        run: |
-          if [ -d "phaser" ]; then
-            cd phaser
-          elif [ -d "../phaser" ]; then
-            cd ../phaser
-          else
-            echo "Error: phaser directory not found"
-            pwd
-            ls -la
-            exit 1
-          fi
-          cargo check
+        run: cargo check
 
       - name: Run tests
-        run: |
-          if [ -d "phaser" ]; then
-            cd phaser
-          elif [ -d "../phaser" ]; then
-            cd ../phaser
-          else
-            echo "Error: phaser directory not found"
-            pwd
-            ls -la
-            exit 1
-          fi
-          cargo test --all
+        run: cargo test --all
 
       - name: Build release
-        run: |
-          if [ -d "phaser" ]; then
-            cd phaser
-          elif [ -d "../phaser" ]; then
-            cd ../phaser
-          else
-            echo "Error: phaser directory not found"
-            pwd
-            ls -la
-            exit 1
-          fi
-          cargo build --release
+        run: cargo build --release

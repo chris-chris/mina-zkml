@@ -428,7 +428,7 @@ impl Model {
                             inputs: node
                                 .inputs
                                 .iter()
-                                .map(|i| SerializableOutletId::from(i))
+                                .map(SerializableOutletId::from)
                                 .collect(),
                             idx,
                             out_dims,

@@ -331,18 +331,15 @@ impl Model {
 
     /// Saves the model to a binary file
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
-        let encoded: Vec<u8> = bincode::serialize(self)
-            .map_err(|_| GraphError::UnableToSaveModel)?;
-        std::fs::write(path, encoded)
-            .map_err(|_| GraphError::UnableToSaveModel)
+        let encoded: Vec<u8> =
+            bincode::serialize(self).map_err(|_| GraphError::UnableToSaveModel)?;
+        std::fs::write(path, encoded).map_err(|_| GraphError::UnableToSaveModel)
     }
 
     /// Loads a model from a binary file
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, GraphError> {
-        let bytes = std::fs::read(path)
-            .map_err(|_| GraphError::UnableToReadModel)?;
-        bincode::deserialize(&bytes)
-            .map_err(|_| GraphError::UnableToReadModel)
+        let bytes = std::fs::read(path).map_err(|_| GraphError::UnableToReadModel)?;
+        bincode::deserialize(&bytes).map_err(|_| GraphError::UnableToReadModel)
     }
 
     /// Converts a tract graph into the internal node representation

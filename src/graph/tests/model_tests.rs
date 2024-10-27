@@ -75,7 +75,7 @@ mod tests {
             1,
             2,
         );
-        
+
         // Create a Node first
         let node = Node {
             op: Box::new(tract_core::ops::cnn::MaxPool::new(pool_spec, None)),

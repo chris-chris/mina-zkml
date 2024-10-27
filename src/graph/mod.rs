@@ -1,7 +1,7 @@
-pub mod model;
 pub mod errors;
-pub mod utilities;
+pub mod model;
 pub mod scales;
+pub mod utilities;
 
 #[cfg(test)]
 mod tests;

@@ -1,8 +1,4 @@
-use kimchi::graph::{
-    model::*,
-    errors::GraphError,
-    scales::*,
-};
+use kimchi::graph::{errors::GraphError, model::*, scales::*};
 use std::collections::{BTreeMap, HashMap};
 
 #[test]
@@ -18,7 +14,7 @@ fn test_model_load_and_scale_integration() {
             ("sequence_length".to_string(), 128),
         ]),
     };
-    
+
     let visibility = VarVisibility {
         input: Visibility::Public,
         output: Visibility::Public,
@@ -46,12 +42,8 @@ fn test_model_load_and_scale_integration() {
                 let output_scale = Scale::new(node.out_scale);
                 let rebase_multiplier = 2.0;
 
-                let var_scales = VarScales::new(
-                    input_scale,
-                    params_scale,
-                    output_scale,
-                    rebase_multiplier,
-                );
+                let var_scales =
+                    VarScales::new(input_scale, params_scale, output_scale, rebase_multiplier);
 
                 // Test scale operations
                 assert_eq!(var_scales.input.value(), 1);
@@ -89,7 +81,7 @@ fn test_model_graph_traversal() {
             ("sequence_length".to_string(), 128),
         ]),
     };
-    
+
     let visibility = VarVisibility {
         input: Visibility::Public,
         output: Visibility::Public,
@@ -145,7 +137,11 @@ fn test_model_graph_traversal() {
 
     // Verify all nodes are reachable
     for &(node_id, _) in &model.graph.outputs {
-        assert!(visited_nodes.contains_key(&node_id), "Output node {} is not reachable", node_id);
+        assert!(
+            visited_nodes.contains_key(&node_id),
+            "Output node {} is not reachable",
+            node_id
+        );
     }
 }
 
@@ -155,7 +151,7 @@ fn test_error_handling_integration() {
     let run_args = RunArgs {
         variables: HashMap::new(),
     };
-    
+
     let visibility = VarVisibility {
         input: Visibility::Public,
         output: Visibility::Public,
@@ -166,9 +162,7 @@ fn test_error_handling_integration() {
 
     // Test invalid model path
     let run_args = RunArgs {
-        variables: HashMap::from([
-            ("batch_size".to_string(), 1),
-        ]),
+        variables: HashMap::from([("batch_size".to_string(), 1)]),
     };
 
     let result = Model::new("nonexistent.onnx", &run_args, &visibility);
@@ -178,7 +172,7 @@ fn test_error_handling_integration() {
     let nodes = BTreeMap::new();
     let invalid_node = 99999;
     let invalid_output = vec![(invalid_node, 0)];
-    
+
     let parsed_nodes = ParsedNodes {
         nodes,
         inputs: vec![],

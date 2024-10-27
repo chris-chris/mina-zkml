@@ -2,7 +2,10 @@ use super::errors::GraphError;
 use instant;
 use log::debug;
 use serde::{Deserialize, Serialize};
-use std::{collections::{BTreeMap, HashMap}, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::Path,
+};
 use tract_onnx::{prelude::*, tract_hir::ops::scan::Scan};
 
 /// Represents a node output connection as (node_index, output_slot)
@@ -135,10 +138,7 @@ pub enum InputMapping {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum OutputMapping {
     /// Single output connection
-    Single {
-        outlet: usize,
-        is_state: bool,
-    },
+    Single { outlet: usize, is_state: bool },
     /// Output stacked along an axis
     Stacked {
         outlet: usize,
@@ -168,9 +168,9 @@ impl OutputMapping {
 /// Variable visibility levels
 #[derive(Clone, Debug, PartialEq)]
 pub enum Visibility {
-    Public,   // Visible externally
-    Private,  // Internal only
-    Fixed,    // Cannot be modified
+    Public,  // Visible externally
+    Private, // Internal only
+    Fixed,   // Cannot be modified
 }
 
 impl Model {

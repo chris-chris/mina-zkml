@@ -1,23 +1,21 @@
 #[cfg(test)]
 mod tests {
-    use super::super::model::*;
     use super::super::errors::GraphError;
+    use super::super::model::Node;
+    use super::super::model::*;
     use std::collections::{BTreeMap, HashMap};
     use std::env;
     use tract_data::internal::tract_smallvec::SmallVec;
     use tract_onnx::tract_hir::ops::cnn::{PaddingSpec, PoolSpec};
     use tract_onnx::tract_hir::ops::nn::DataFormat;
     use tract_onnx::{prelude::*, tract_core};
-    use super::super::model::Node;
 
     #[test]
     fn test_model_load_invalid_path() {
         let run_args = RunArgs {
-            variables: std::collections::HashMap::from([
-                ("batch_size".to_string(), 1),
-            ]),
+            variables: std::collections::HashMap::from([("batch_size".to_string(), 1)]),
         };
-        
+
         let visibility = VarVisibility {
             input: Visibility::Public,
             output: Visibility::Public,
@@ -29,7 +27,7 @@ mod tests {
     }
 
     #[test]
-    fn test_model_load_success()  -> Result<(), Box<dyn std::error::Error>> {
+    fn test_model_load_success() -> Result<(), Box<dyn std::error::Error>> {
         let run_args = RunArgs {
             variables: HashMap::from([
                 ("N".to_string(), 1),
@@ -40,7 +38,7 @@ mod tests {
                 ("sequence_length".to_string(), 128),
             ]),
         };
-        
+
         let visibility = VarVisibility {
             input: Visibility::Public,
             output: Visibility::Public,
@@ -49,7 +47,7 @@ mod tests {
         // Get current directory path
         let current_dir = env::current_dir()?;
         println!("current directory: {:?}", current_dir.display());
-            
+
         let model_path = current_dir.join("models/resnet101-v1-7.onnx");
         println!("Model path: {:?}", model_path);
 
@@ -70,12 +68,12 @@ mod tests {
         let inputs: Vec<(usize, usize)> = vec![];
         let pool_spec: PoolSpec = PoolSpec::new(
             DataFormat::NHWC,
-            SmallVec::from_buf([2, 2, 2, 2]), 
-            PaddingSpec::Valid, 
-            None, 
-            None, 
+            SmallVec::from_buf([2, 2, 2, 2]),
+            PaddingSpec::Valid,
+            None,
+            None,
             1,
-            2
+            2,
         );
         let node: NodeType = NodeType::Node(Node {
             op: Box::new(tract_core::ops::cnn::MaxPool::new(pool_spec, None)),

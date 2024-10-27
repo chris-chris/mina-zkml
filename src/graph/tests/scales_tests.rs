@@ -44,12 +44,7 @@ mod tests {
         let output_scale = Scale::new(4);
         let rebase_multiplier = 2.0;
 
-        let var_scales = VarScales::new(
-            input_scale,
-            params_scale,
-            output_scale,
-            rebase_multiplier,
-        );
+        let var_scales = VarScales::new(input_scale, params_scale, output_scale, rebase_multiplier);
 
         // Test multipliers
         assert!((var_scales.input_multiplier() - 4.0).abs() < EPSILON);
@@ -60,7 +55,7 @@ mod tests {
         let value = 10.0;
         let rebased = var_scales.rebase(value);
         assert!((rebased - 20.0).abs() < EPSILON);
-        
+
         let unrebased = var_scales.unrebase(rebased);
         assert!((unrebased - value).abs() < EPSILON);
     }
@@ -72,12 +67,7 @@ mod tests {
         let output_mult = 16.0;
         let rebase_mult = 2.0;
 
-        let var_scales = from_multipliers(
-            input_mult,
-            params_mult,
-            output_mult,
-            rebase_mult,
-        );
+        let var_scales = from_multipliers(input_mult, params_mult, output_mult, rebase_mult);
 
         assert_eq!(var_scales.input.value(), 2);
         assert_eq!(var_scales.params.value(), 3);

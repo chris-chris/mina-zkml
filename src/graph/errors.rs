@@ -21,4 +21,7 @@ pub enum GraphError {
     //Missing Parameter
     #[error("missing parameter")]
     MissingParameter,
+    // Unable to Save Model
+    #[error("unable to save model to file")]
+    UnableToSaveModel,
 }

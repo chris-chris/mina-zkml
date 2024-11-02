@@ -2,7 +2,10 @@ use super::errors::GraphError;
 use instant;
 use log::debug;
 use serde::{Deserialize, Serialize};
-use std::{collections::{BTreeMap, HashMap}, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::Path,
+};
 use tract_onnx::{prelude::*, tract_hir::ops::scan::Scan};
 
 /// Represents a node output connection as (node_index, output_slot)
@@ -10,15 +13,40 @@ pub type Outlet = (usize, usize);
 /// Result type for tract operations containing the graph and symbol values
 type TractResult = (Graph<TypedFact, Box<dyn TypedOp>>, SymbolValues);
 
+/// Serializable version of OutletId
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SerializableOutletId {
+    pub node: usize,
+    pub slot: usize,
+}
+
+impl From<OutletId> for SerializableOutletId {
+    fn from(outlet: OutletId) -> Self {
+        SerializableOutletId {
+            node: outlet.node,
+            slot: outlet.slot,
+        }
+    }
+}
+
+impl From<&OutletId> for SerializableOutletId {
+    fn from(outlet: &OutletId) -> Self {
+        SerializableOutletId {
+            node: outlet.node,
+            slot: outlet.slot,
+        }
+    }
+}
+
 /// Main model structure containing the parsed graph and variable visibility settings
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Model {
     pub graph: ParsedNodes,
     pub visibility: VarVisibility,
 }
 
 /// Represents the parsed neural network graph structure
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParsedNodes {
     /// Map of node indices to their corresponding node types
     pub nodes: BTreeMap<usize, NodeType>,
@@ -49,14 +77,14 @@ impl ParsedNodes {
 }
 
 /// Represents different types of nodes in the graph
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NodeType {
     /// A regular computation node
-    Node(Node),
+    Node(SerializableNode),
     /// A subgraph node (typically used for control flow operations like loops)
     SubGraph {
         model: Box<Model>,
-        inputs: Vec<tract_onnx::prelude::OutletId>,
+        inputs: Vec<SerializableOutletId>,
         idx: usize,
         out_dims: Vec<Vec<usize>>,
         out_scales: Vec<i32>,
@@ -106,15 +134,50 @@ pub struct Node {
     pub id: usize,
 }
 
+/// Serializable version of Node that excludes TypedOp
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SerializableNode {
+    /// Input connections to this node
+    pub inputs: Vec<Outlet>,
+    /// Output dimensions
+    pub out_dims: Vec<usize>,
+    /// Output scale factor
+    pub out_scale: i32,
+    /// Unique identifier for the node
+    pub id: usize,
+}
+
+impl From<Node> for SerializableNode {
+    fn from(node: Node) -> Self {
+        SerializableNode {
+            inputs: node.inputs,
+            out_dims: node.out_dims,
+            out_scale: node.out_scale,
+            id: node.id,
+        }
+    }
+}
+
+impl From<&Node> for SerializableNode {
+    fn from(node: &Node) -> Self {
+        SerializableNode {
+            inputs: node.inputs.clone(),
+            out_dims: node.out_dims.clone(),
+            out_scale: node.out_scale,
+            id: node.id,
+        }
+    }
+}
+
 /// Arguments for running the model
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunArgs {
     /// Map of variable names to their values
     pub variables: HashMap<String, usize>,
 }
 
 /// Controls visibility of variables in the model
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VarVisibility {
     pub input: Visibility,
     pub output: Visibility,
@@ -135,10 +198,7 @@ pub enum InputMapping {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum OutputMapping {
     /// Single output connection
-    Single {
-        outlet: usize,
-        is_state: bool,
-    },
+    Single { outlet: usize, is_state: bool },
     /// Output stacked along an axis
     Stacked {
         outlet: usize,
@@ -166,11 +226,11 @@ impl OutputMapping {
 }
 
 /// Variable visibility levels
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Visibility {
-    Public,   // Visible externally
-    Private,  // Internal only
-    Fixed,    // Cannot be modified
+    Public,  // Visible externally
+    Private, // Internal only
+    Fixed,   // Cannot be modified
 }
 
 impl Model {
@@ -262,11 +322,24 @@ impl Model {
         run_args: &RunArgs,
         visibility: &VarVisibility,
     ) -> Result<Self, GraphError> {
-        let parsed_nodes = Self::load_onnx_model(path, &run_args, &visibility)?;
+        let parsed_nodes = Self::load_onnx_model(path, run_args, visibility)?;
         Ok(Model {
             graph: parsed_nodes,
             visibility: visibility.clone(),
         })
+    }
+
+    /// Saves the model to a binary file
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
+        let encoded: Vec<u8> =
+            bincode::serialize(self).map_err(|_| GraphError::UnableToSaveModel)?;
+        std::fs::write(path, encoded).map_err(|_| GraphError::UnableToSaveModel)
+    }
+
+    /// Loads a model from a binary file
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, GraphError> {
+        let bytes = std::fs::read(path).map_err(|_| GraphError::UnableToReadModel)?;
+        bincode::deserialize(&bytes).map_err(|_| GraphError::UnableToReadModel)
     }
 
     /// Converts a tract graph into the internal node representation
@@ -352,11 +425,7 @@ impl Model {
                                 },
                                 visibility: visibility.clone(),
                             }),
-                            inputs: node
-                                .inputs
-                                .iter()
-                                .map(|i| OutletId::new(i.node, i.slot))
-                                .collect(),
+                            inputs: node.inputs.iter().map(SerializableOutletId::from).collect(),
                             idx,
                             out_dims,
                             out_scales: vec![1; scan_op.output_mapping.len()],
@@ -372,16 +441,15 @@ impl Model {
                         .pop()
                         .unwrap_or_default();
 
-                    nodes.insert(
-                        idx,
-                        NodeType::Node(Node {
-                            op: node.op.clone(),
-                            inputs: node.inputs.iter().map(|i| (i.node, i.slot)).collect(),
-                            out_dims,
-                            out_scale: 1,
-                            id: idx,
-                        }),
-                    );
+                    let regular_node = Node {
+                        op: node.op.clone(),
+                        inputs: node.inputs.iter().map(|i| (i.node, i.slot)).collect(),
+                        out_dims,
+                        out_scale: 1,
+                        id: idx,
+                    };
+
+                    nodes.insert(idx, NodeType::Node(regular_node.into()));
                 }
             }
         }

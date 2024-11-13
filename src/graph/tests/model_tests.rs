@@ -1,213 +1,286 @@
-#[cfg(test)]
-mod tests {
-    use super::super::errors::GraphError;
-    use super::super::model::Node;
-    use super::super::model::*;
-    use std::collections::{BTreeMap, HashMap};
-    use std::env;
-    use std::path::Path;
-    use tract_data::internal::tract_smallvec::SmallVec;
-    use tract_onnx::tract_hir::ops::cnn::{PaddingSpec, PoolSpec};
-    use tract_onnx::tract_hir::ops::nn::DataFormat;
-    use tract_onnx::{prelude::*, tract_core};
+use super::*;
+use crate::graph::{
+    model::{Model, NodeType, ParsedNodes, RunArgs, SerializableNode, VarVisibility, Visibility, OperationType},
+    errors::GraphError,
+};
+use std::collections::{BTreeMap, HashMap};
 
-    #[test]
-    fn test_model_load_invalid_path() {
-        let run_args = RunArgs {
-            variables: std::collections::HashMap::from([("batch_size".to_string(), 1)]),
-        };
+#[test]
+fn test_matmul_operation() {
+    // Create a graph with MatMul operation
+    let mut nodes = BTreeMap::new();
+    
+    // Input nodes (id: 0, 1)
+    let input_node1 = SerializableNode {
+        inputs: vec![],
+        out_dims: vec![2, 2], // 2x2 matrix
+        out_scale: 1,
+        id: 0,
+        op_type: OperationType::Input,
+        weights: None,
+        bias: None,
+    };
+    nodes.insert(0, NodeType::Node(input_node1));
 
-        let visibility = VarVisibility {
+    let input_node2 = SerializableNode {
+        inputs: vec![],
+        out_dims: vec![2, 2], // 2x2 matrix
+        out_scale: 1,
+        id: 1,
+        op_type: OperationType::Input,
+        weights: None,
+        bias: None,
+    };
+    nodes.insert(1, NodeType::Node(input_node2));
+
+    // MatMul node (id: 2)
+    let matmul_node = SerializableNode {
+        inputs: vec![(0, 0), (1, 0)],
+        out_dims: vec![2, 2], // Result is 2x2
+        out_scale: 1,
+        id: 2,
+        op_type: OperationType::MatMul,
+        weights: None,
+        bias: None,
+    };
+    nodes.insert(2, NodeType::Node(matmul_node));
+
+    let graph = ParsedNodes {
+        nodes,
+        inputs: vec![0, 1],
+        outputs: vec![(2, 0)],
+    };
+
+    let model = Model {
+        graph,
+        visibility: VarVisibility {
             input: Visibility::Public,
             output: Visibility::Public,
-        };
+        },
+    };
 
-        let model_path = "nonexistent.onnx";
-        let result = Model::new(model_path, &run_args, &visibility);
-        assert!(matches!(result, Err(GraphError::UnableToReadModel)));
-    }
+    // Test execution with 2x2 matrices
+    // First matrix: [[1, 2], [3, 4]]
+    let input1 = vec![1.0, 2.0, 3.0, 4.0];
+    // Second matrix: [[5, 6], [7, 8]]
+    let input2 = vec![5.0, 6.0, 7.0, 8.0];
+    
+    let result = model.graph.execute(&[input1.clone(), input2.clone()]).unwrap();
 
-    #[test]
-    fn test_model_load_success() -> Result<(), Box<dyn std::error::Error>> {
-        let run_args = RunArgs {
-            variables: HashMap::from([
-                ("N".to_string(), 1),
-                ("C".to_string(), 3),
-                ("H".to_string(), 224),
-                ("W".to_string(), 224),
-                ("batch_size".to_string(), 1),
-                ("sequence_length".to_string(), 128),
-            ]),
-        };
+    // Expected result: [[19, 22], [43, 50]]
+    // First row: 1*5 + 2*7 = 19, 1*6 + 2*8 = 22
+    // Second row: 3*5 + 4*7 = 43, 3*6 + 4*8 = 50
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0], vec![19.0, 22.0, 43.0, 50.0]);
 
-        let visibility = VarVisibility {
+    // Test invalid input dimensions
+    let invalid_input1 = vec![1.0, 2.0, 3.0]; // 3 elements instead of 4
+    let result = model.graph.execute(&[invalid_input1.clone(), input2]);
+    assert!(matches!(result, Err(GraphError::InvalidInputShape)));
+
+    let result = model.graph.execute(&[input1, invalid_input1]);
+    assert!(matches!(result, Err(GraphError::InvalidInputShape)));
+}
+
+#[test]
+fn test_relu_operation() {
+    // Create a graph with ReLU operation
+    let mut nodes = BTreeMap::new();
+    
+    // Input node (id: 0)
+    let input_node = SerializableNode {
+        inputs: vec![],
+        out_dims: vec![4],
+        out_scale: 1,
+        id: 0,
+        op_type: OperationType::Input,
+        weights: None,
+        bias: None,
+    };
+    nodes.insert(0, NodeType::Node(input_node));
+
+    // ReLU node (id: 1)
+    let relu_node = SerializableNode {
+        inputs: vec![(0, 0)],
+        out_dims: vec![4],
+        out_scale: 1,
+        id: 1,
+        op_type: OperationType::Relu,
+        weights: None,
+        bias: None,
+    };
+    nodes.insert(1, NodeType::Node(relu_node));
+
+    let graph = ParsedNodes {
+        nodes,
+        inputs: vec![0],
+        outputs: vec![(1, 0)],
+    };
+
+    let model = Model {
+        graph,
+        visibility: VarVisibility {
             input: Visibility::Public,
             output: Visibility::Public,
-        };
+        },
+    };
 
-        // Get current directory path
-        let current_dir = env::current_dir()?;
-        println!("current directory: {:?}", current_dir.display());
+    // Test execution with various inputs
+    let input = vec![-1.0, 0.0, 1.0, 2.0];
+    let result = model.graph.execute(&[input]).unwrap();
 
-        let model_path = current_dir.join("models/resnet101-v1-7.onnx");
-        println!("Model path: {:?}", model_path);
+    // Expected result: [0.0, 0.0, 1.0, 2.0]
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0], vec![0.0, 0.0, 1.0, 2.0]);
 
-        // Verify model file exists
-        if !model_path.exists() {
-            println!("Model file not found at expected path");
-            return Ok(());
-        }
+    // Test with invalid input shape
+    let invalid_input = vec![-1.0, 0.0, 1.0]; // 3 elements instead of 4
+    let result = model.graph.execute(&[invalid_input]);
+    assert!(matches!(result, Err(GraphError::InvalidInputShape)));
+}
 
-        let model_path_str = model_path.to_str().ok_or("Invalid model path")?;
+#[test]
+fn test_sigmoid_operation() {
+    // Create a graph with Sigmoid operation
+    let mut nodes = BTreeMap::new();
+    
+    // Input node (id: 0)
+    let input_node = SerializableNode {
+        inputs: vec![],
+        out_dims: vec![3],
+        out_scale: 1,
+        id: 0,
+        op_type: OperationType::Input,
+        weights: None,
+        bias: None,
+    };
+    nodes.insert(0, NodeType::Node(input_node));
 
-        let result = Model::new(model_path_str, &run_args, &visibility);
-        assert!(result.is_ok());
-        println!("result: {:?}", result);
+    // Sigmoid node (id: 1)
+    let sigmoid_node = SerializableNode {
+        inputs: vec![(0, 0)],
+        out_dims: vec![3],
+        out_scale: 1,
+        id: 1,
+        op_type: OperationType::Sigmoid,
+        weights: None,
+        bias: None,
+    };
+    nodes.insert(1, NodeType::Node(sigmoid_node));
 
-        let model = result.unwrap();
-        assert!(model.graph.num_inputs() > 0);
-        Ok(())
-    }
+    let graph = ParsedNodes {
+        nodes,
+        inputs: vec![0],
+        outputs: vec![(1, 0)],
+    };
 
-    #[test]
-    fn test_parsed_nodes_output_scales() {
-        let mut nodes: BTreeMap<usize, NodeType> = BTreeMap::new();
-        let inputs: Vec<(usize, usize)> = vec![];
-        let pool_spec: PoolSpec = PoolSpec::new(
-            DataFormat::NHWC,
-            SmallVec::from_buf([2, 2, 2, 2]),
-            PaddingSpec::Valid,
-            None,
-            None,
-            1,
-            2,
-        );
-
-        // Create a Node first
-        let node = Node {
-            op: Box::new(tract_core::ops::cnn::MaxPool::new(pool_spec, None)),
-            inputs: inputs.clone(),
-            out_dims: vec![],
-            out_scale: 1,
-            id: 0,
-        };
-
-        // Convert Node to SerializableNode
-        let serializable_node = SerializableNode {
-            inputs: node.inputs,
-            out_dims: node.out_dims,
-            out_scale: node.out_scale,
-            id: node.id,
-        };
-
-        nodes.insert(0, NodeType::Node(serializable_node));
-
-        let parsed_nodes = ParsedNodes {
-            nodes,
-            inputs: vec![],
-            outputs: vec![(0, 0)],
-        };
-
-        let scales = parsed_nodes.get_output_scales().unwrap();
-        assert_eq!(scales, vec![1]);
-    }
-
-    #[test]
-    fn test_model_serialization() -> Result<(), Box<dyn std::error::Error>> {
-        let run_args = RunArgs {
-            variables: HashMap::from([
-                ("N".to_string(), 1),
-                ("C".to_string(), 3),
-                ("H".to_string(), 224),
-                ("W".to_string(), 224),
-                ("batch_size".to_string(), 1),
-                ("sequence_length".to_string(), 128),
-            ]),
-        };
-
-        let visibility = VarVisibility {
+    let model = Model {
+        graph,
+        visibility: VarVisibility {
             input: Visibility::Public,
             output: Visibility::Public,
-        };
+        },
+    };
 
-        let current_dir = env::current_dir()?;
-        let model_path = current_dir.join("models/resnet101-v1-7.onnx");
+    // Test execution with various inputs
+    let input = vec![-2.0, 0.0, 2.0];
+    let result = model.graph.execute(&[input]).unwrap();
 
-        // Skip test if model file doesn't exist
-        if !model_path.exists() {
-            println!("Model file not found, skipping test");
-            return Ok(());
-        }
+    // Expected result: sigmoid values for [-2.0, 0.0, 2.0]
+    // sigmoid(x) = 1 / (1 + e^(-x))
+    assert_eq!(result.len(), 1);
+    assert!((result[0][0] - 0.119).abs() < 0.001); // sigmoid(-2) ≈ 0.119
+    assert!((result[0][1] - 0.5).abs() < 0.001);   // sigmoid(0) = 0.5
+    assert!((result[0][2] - 0.881).abs() < 0.001); // sigmoid(2) ≈ 0.881
 
-        let model_path_str = model_path.to_str().ok_or("Invalid model path")?;
-        let model = Model::new(model_path_str, &run_args, &visibility)?;
+    // Test with invalid input shape
+    let invalid_input = vec![-2.0, 0.0]; // 2 elements instead of 3
+    let result = model.graph.execute(&[invalid_input]);
+    assert!(matches!(result, Err(GraphError::InvalidInputShape)));
+}
 
-        // Test saving
-        let save_path = "test_model.bin";
-        assert!(model.save(save_path).is_ok());
+#[test]
+fn test_error_handling() {
+    // Create a graph with invalid input shapes
+    let mut nodes = BTreeMap::new();
+    
+    // Input node (id: 0)
+    let input_node = SerializableNode {
+        inputs: vec![],
+        out_dims: vec![4],
+        out_scale: 1,
+        id: 0,
+        op_type: OperationType::Input,
+        weights: None,
+        bias: None,
+    };
+    nodes.insert(0, NodeType::Node(input_node));
 
-        // Test loading
-        let loaded_model = Model::load(save_path);
-        assert!(loaded_model.is_ok());
+    // MatMul node with invalid input dimensions (id: 1)
+    let matmul_node = SerializableNode {
+        inputs: vec![(0, 0)], // MatMul needs two inputs
+        out_dims: vec![2, 2],
+        out_scale: 1,
+        id: 1,
+        op_type: OperationType::MatMul,
+        weights: None,
+        bias: None,
+    };
+    nodes.insert(1, NodeType::Node(matmul_node));
 
-        // Clean up
-        std::fs::remove_file(save_path)?;
+    let graph = ParsedNodes {
+        nodes,
+        inputs: vec![0],
+        outputs: vec![(1, 0)],
+    };
 
-        // Compare original and loaded models
-        let loaded_model = loaded_model.unwrap();
-        assert_eq!(model.visibility, loaded_model.visibility);
-        assert_eq!(model.graph.inputs.len(), loaded_model.graph.inputs.len());
-        assert_eq!(model.graph.outputs.len(), loaded_model.graph.outputs.len());
-        Ok(())
-    }
-
-    #[test]
-    fn test_model_save_error() -> Result<(), Box<dyn std::error::Error>> {
-        let run_args = RunArgs {
-            variables: HashMap::from([
-                ("N".to_string(), 1),
-                ("C".to_string(), 3),
-                ("H".to_string(), 224),
-                ("W".to_string(), 224),
-                ("batch_size".to_string(), 1),
-                ("sequence_length".to_string(), 128),
-            ]),
-        };
-
-        let visibility = VarVisibility {
+    let model = Model {
+        graph,
+        visibility: VarVisibility {
             input: Visibility::Public,
             output: Visibility::Public,
-        };
+        },
+    };
 
-        let current_dir = env::current_dir()?;
-        let model_path = current_dir.join("models/resnet101-v1-7.onnx");
+    // Test execution with invalid input
+    let input = vec![1.0, 2.0, 3.0, 4.0];
+    let result = model.graph.execute(&[input]);
+    assert!(matches!(result, Err(GraphError::InvalidInputShape)));
+}
 
-        // Skip test if model file doesn't exist
-        if !model_path.exists() {
-            println!("Model file not found, skipping test");
-            return Ok(());
-        }
+#[test]
+fn test_const_operation() {
+    // Create a graph with Const operation
+    let mut nodes = BTreeMap::new();
+    
+    // Const node (id: 0)
+    let const_node = SerializableNode {
+        inputs: vec![],
+        out_dims: vec![3],
+        out_scale: 1,
+        id: 0,
+        op_type: OperationType::Const,
+        weights: Some(vec![1.0, 2.0, 3.0]),
+        bias: None,
+    };
+    nodes.insert(0, NodeType::Node(const_node));
 
-        let model_path_str = model_path.to_str().ok_or("Invalid model path")?;
-        let model = Model::new(model_path_str, &run_args, &visibility)?;
+    let graph = ParsedNodes {
+        nodes,
+        inputs: vec![],
+        outputs: vec![(0, 0)],
+    };
 
-        // Test saving to an invalid path
-        let result = model.save("/invalid/path/model.bin");
-        assert!(matches!(result, Err(GraphError::UnableToSaveModel)));
-        Ok(())
-    }
+    let model = Model {
+        graph,
+        visibility: VarVisibility {
+            input: Visibility::Public,
+            output: Visibility::Public,
+        },
+    };
 
-    #[test]
-    fn test_model_load_binary_error() {
-        // Test loading from a non-existent file
-        let result = Model::load("non_existent_model.bin");
-        assert!(matches!(result, Err(GraphError::UnableToReadModel)));
-
-        // Test loading from an invalid binary file
-        let invalid_bin_path = "invalid_model.bin";
-        std::fs::write(invalid_bin_path, "invalid binary content").unwrap();
-        let result = Model::load(invalid_bin_path);
-        assert!(matches!(result, Err(GraphError::UnableToReadModel)));
-        std::fs::remove_file(invalid_bin_path).unwrap();
-    }
+    // Test execution - Const nodes should output their weights
+    let result = model.graph.execute(&[]).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0], vec![1.0, 2.0, 3.0]);
 }

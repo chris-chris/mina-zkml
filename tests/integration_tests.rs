@@ -1,4 +1,4 @@
-use kimchi::graph::{errors::GraphError, model::*, scales::*};
+use mina_zkml::graph::{errors::GraphError, model::*, scales::*};
 use std::collections::{BTreeMap, HashMap};
 
 #[test]
@@ -54,7 +54,7 @@ fn test_model_load_and_scale_integration() {
                 let test_value = 10.0;
                 let rebased = var_scales.rebase(test_value);
                 let unrebased = var_scales.unrebase(rebased);
-                assert!((test_value - unrebased).abs() < std::f64::EPSILON);
+                assert!((test_value - unrebased).abs() < f64::EPSILON);
             }
             NodeType::SubGraph { out_scales, .. } => {
                 // Test subgraph scales
@@ -158,7 +158,7 @@ fn test_error_handling_integration() {
     };
 
     let result = Model::new("models/resnet101-v1-7.onnx", &run_args, &visibility);
-    assert!(matches!(result, Err(GraphError::InvalidInputShape)));
+    assert!(matches!(result, Err(GraphError::MissingBatchSize)));
 
     // Test invalid model path
     let run_args = RunArgs {

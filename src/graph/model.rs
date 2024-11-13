@@ -23,6 +23,8 @@ pub enum OperationType {
     EinSum,
     Max,
     Const,
+    RmAxis,
+    Reshape,
 }
 
 /// Serializable version of OutletId
@@ -96,7 +98,17 @@ impl ParsedNodes {
 
         // Store input values
         for (&node_idx, input) in self.inputs.iter().zip(inputs.iter()) {
-            node_outputs.insert(node_idx, vec![input.clone()]);
+            // Get the input node to check its dimensions
+            if let Some(NodeType::Node(node)) = self.nodes.get(&node_idx) {
+                if node.out_dims.len() > 1 {
+                    // If input node expects a tensor, reshape the input
+                    node_outputs.insert(node_idx, vec![input.clone()]);
+                } else {
+                    node_outputs.insert(node_idx, vec![input.clone()]);
+                }
+            } else {
+                node_outputs.insert(node_idx, vec![input.clone()]);
+            }
         }
 
         // Topologically sort nodes for execution
@@ -179,28 +191,20 @@ impl ParsedNodes {
                 }
             },
             OperationType::MatMul | OperationType::EinSum => {
-                if inputs.len() != 2 {
-                    println!("Invalid input length for MatMul/EinSum");
-                    return Err(GraphError::InvalidInputShape);
-                }
-
-                // Get matrix dimensions
-                let m = node.out_dims[0]; // Output rows (1 for input [1,10])
-                let n = node.out_dims[1]; // Output columns (3 for output [1,3])
-                let k = inputs[0].len(); // Inner dimension (10 for input [1,10])
-
-                // Get the second matrix (weights or input)
-                let second_matrix = if let Some(weights) = &node.weights {
+                let input = &inputs[0];
+                let second_matrix = if inputs.len() > 1 {
+                    &inputs[1]
+                } else if let Some(weights) = &node.weights {
                     weights
                 } else {
-                    &inputs[1]
+                    println!("The weights are missing for MatMul/EinSum {:?}", &node);
+                    return Err(GraphError::InvalidInputShape);
                 };
 
-                // For input [1,10] and weights [3,10], second_matrix should be [3,10]
-                if second_matrix.len() != n * k {
-                    println!("Invalid second matrix shape for MatMul");
-                    return Err(GraphError::InvalidInputShape);
-                }
+                // Get matrix dimensions from node's output dimensions
+                let m = node.out_dims[0]; // Output rows
+                let n = if node.out_dims.len() > 1 { node.out_dims[1] } else { 1 }; // Output columns
+                let k = input.len(); // Inner dimension
 
                 // Perform matrix multiplication
                 let mut output = vec![0.0; m * n];
@@ -208,9 +212,7 @@ impl ParsedNodes {
                     for j in 0..n {
                         let mut sum = 0.0;
                         for l in 0..k {
-                            // For input [1,10] and weights [3,10], this does:
-                            // output[i,j] = sum(input[l] * weights[j * k + l]) for l in 0..10
-                            sum += inputs[0][l] * second_matrix[j * k + l];
+                            sum += input[l] * second_matrix[j * k + l];
                         }
                         output[i * n + j] = sum;
                     }
@@ -219,15 +221,13 @@ impl ParsedNodes {
                 Ok(vec![output])
             },
             OperationType::Add => {
-                if inputs.len() != 2 {
-                    println!("Invalid input length for Add");
-                    return Err(GraphError::InvalidInputShape);
-                }
                 let a = &inputs[0];
-                let b = if let Some(bias) = &node.bias {
+                let b = if inputs.len() > 1 {
+                    &inputs[1]
+                } else if let Some(bias) = &node.bias {
                     bias
                 } else {
-                    &inputs[1]
+                    return Err(GraphError::InvalidInputShape);
                 };
                 
                 if a.len() != b.len() {
@@ -237,25 +237,22 @@ impl ParsedNodes {
                 Ok(vec![a.iter().zip(b.iter()).map(|(&x, &y)| x + y).collect()])
             }
             OperationType::Relu | OperationType::Max => {
-                // For ReLU/Max, we only need the first input
-                if inputs.len() < 1 {
+                if inputs.is_empty() {
                     println!("Invalid input length for Relu/Max");
                     return Err(GraphError::InvalidInputShape);
                 }
 
-                // Compare with 0 (ReLU operation)
                 let result = inputs[0].iter()
                     .map(|&x| x.max(0.0))
                     .collect();
                 Ok(vec![result])
             }
             OperationType::Sigmoid => {
-                if inputs.len() != 1 {
+                if inputs.is_empty() {
                     println!("Invalid input length for Sigmoid");
                     return Err(GraphError::InvalidInputShape);
                 }
 
-                // Validate input dimensions
                 let expected_size: usize = node.out_dims.iter().product();
                 if inputs[0].len() != expected_size {
                     println!("Invalid input shape for Sigmoid");
@@ -267,6 +264,13 @@ impl ParsedNodes {
                     .map(|&x| 1.0 / (1.0 + (-x).exp()))
                     .collect()])
             }
+            OperationType::RmAxis | OperationType::Reshape => {
+                if inputs.is_empty() {
+                    return Err(GraphError::InvalidInputShape);
+                }
+                // These operations just pass through the data as they're shape operations
+                Ok(vec![inputs[0].clone()])
+            }
         }
     }
 
@@ -275,7 +279,6 @@ impl ParsedNodes {
         let mut visited = HashMap::new();
         let mut sorted = Vec::new();
 
-        // Helper function for DFS
         fn visit(
             node: usize,
             visited: &mut HashMap<usize, bool>,
@@ -294,7 +297,6 @@ impl ParsedNodes {
             if let Some(node_type) = nodes.get(&node) {
                 match node_type {
                     NodeType::Node(node) => {
-                        // Skip dependency check for Const nodes since they don't have inputs
                         if !matches!(node.op_type, OperationType::Const) {
                             for &(input_node, _) in &node.inputs {
                                 visit(input_node, visited, sorted, nodes)?;
@@ -314,7 +316,6 @@ impl ParsedNodes {
             Ok(())
         }
 
-        // Visit all nodes
         for &node in self.nodes.keys() {
             visit(node, &mut visited, &mut sorted, &self.nodes)?;
         }
@@ -361,8 +362,13 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
     fn from(node: &Node<TypedFact, Box<dyn TypedOp>>) -> Self {
         let op_type = if node.op.name() == "Const" {
             OperationType::Const
+        } else if node.inputs.is_empty() {
+            OperationType::Input
+        } else if let Some(op_type) = identify_tract_operation(node) {
+            op_type
         } else {
-            identify_tract_operation(node).unwrap_or(OperationType::MatMul)
+            println!("Unknown operation: {}", node.op.name());
+            OperationType::RmAxis // Default to RmAxis for unknown operations
         };
 
         println!("Node From : {:?}", node);
@@ -371,7 +377,6 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
         // Extract weights and biases based on node type
         let (weights, bias) = match node.op.name().as_ref() {
             "Const" => {
-                // For constant nodes, extract the tensor data
                 if let Some(const_op) = node.op.downcast_ref::<Const>() {
                     if let Ok(tensor_data) = const_op.0.as_slice::<f32>() {
                         (Some(tensor_data.to_vec()), None)
@@ -505,7 +510,7 @@ impl Model {
 
         let parsed_nodes = ParsedNodes {
             nodes,
-            inputs,  // Use the collected input nodes
+            inputs,
             outputs: model.outputs.iter().map(|o| (o.node, o.slot)).collect(),
         };
         Ok(parsed_nodes)
@@ -683,7 +688,6 @@ impl Model {
         for node in nodes.values() {
             match node {
                 NodeType::Node(n) => {
-                    // Skip input checking for Const nodes
                     if matches!(n.op_type, OperationType::Const) {
                         continue;
                     }

@@ -11,6 +11,10 @@ crate-type = ["cdylib", "rlib"]
 name = "perceptron"
 path = "examples/perceptron.rs"
 
+[[example]]
+name = "mnist_inference"
+path = "examples/mnist_inference.rs"
+
 [dependencies]
 anyhow = "1.0.90"
 bincode = "1.3"

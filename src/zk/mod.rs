@@ -1,154 +1,270 @@
-pub mod operations;
-pub mod wiring;
-
 use kimchi::circuits::{
     gate::{CircuitGate, GateType},
     wires::Wire,
-    constraints::ConstraintSystem,
 };
 use mina_curves::pasta::Fp;
 
-use crate::graph::{
-    model::{Model, NodeType, SerializableNode},
-    scales::Scale,
-};
-use operations::OnnxOperation;
-use wiring::WireManager;
+use crate::graph::model::{Model, NodeType, OperationType};
 
-/// Represents a wire in the ZK circuit
-#[derive(Debug, Clone)]
-pub struct ZkWire {
-    pub wire: Wire,
-    pub scale: Scale,
-}
+pub mod operations;
+pub mod wiring;
 
-/// Represents a node in the ZK circuit
+/// Represents a node in the ZK proof circuit
 #[derive(Debug)]
 pub struct ZkNode {
-    pub wires: Vec<ZkWire>,
-    pub gate_type: GateType,
-    pub constraints: Vec<(Fp, Vec<Wire>)>,
+    /// Operation type
+    pub op_type: OperationType,
+    /// Starting row in the circuit
+    pub start_row: usize,
+    /// Number of rows used by this node
+    pub num_rows: usize,
+    /// Gates implementing this node's operation
+    pub gates: Vec<CircuitGate<Fp>>,
 }
 
-/// Main structure for handling ZK proof generation
+/// Generates ZK proof circuit from model
 pub struct ZkProofGenerator {
-    model: Model,
-    wire_manager: WireManager,
+    /// Current row in the circuit
+    current_row: usize,
+    /// List of nodes in the circuit
     nodes: Vec<ZkNode>,
-    constraint_system: ConstraintSystem<Fp>,
 }
 
 impl ZkProofGenerator {
-    pub fn new(model: Model) -> Self {
-        let wire_manager = WireManager::new(0);
-        let constraint_system = ConstraintSystem::create(vec![]).build().unwrap();
-        
+    /// Create a new ZK proof generator
+    pub fn new() -> Self {
         ZkProofGenerator {
-            model,
-            wire_manager,
+            current_row: 0,
             nodes: Vec::new(),
-            constraint_system,
         }
     }
 
-    /// Convert ONNX model nodes to Kimchi circuit gates
-    pub fn build_circuit(&mut self) -> Result<(), anyhow::Error> {
-        // Iterate through model nodes and convert to ZK circuit
-        let nodes: Vec<_> = self.model.graph.nodes.iter().map(|(idx, node)| (*idx, node.clone())).collect();
-        for (node_idx, node_type) in nodes {
-            match node_type {
-                NodeType::Node(node) => {
-                    // Convert regular computation node
-                    let node_idx = node_idx;
-                    let node = node.clone();
-                    self.convert_computation_node(node_idx, &node)?;
+    /// Generate ZK proof circuit from model
+    pub fn generate_circuit(&mut self, model: &Model) -> Vec<CircuitGate<Fp>> {
+        let mut gates = Vec::new();
+
+        // Process nodes in topological order
+        for node in model.graph.nodes.values() {
+            match node {
+                NodeType::Node(n) => {
+                    // Convert operation to circuit gates
+                    let node_gates = match n.op_type {
+                        OperationType::Input => vec![],
+                        OperationType::MatMul => {
+                            let m = n.out_dims[0];
+                            let n_dim = n.out_dims[1];
+                            let k = if !n.inputs.is_empty() {
+                                n.out_dims[1]
+                            } else {
+                                0
+                            };
+                            self.generate_matmul_gates(m, n_dim, k)
+                        }
+                        OperationType::Relu => self.generate_relu_gates(),
+                        OperationType::Sigmoid => self.generate_sigmoid_gates(),
+                        OperationType::Add => self.generate_add_gates(),
+                        OperationType::EinSum => self.generate_einsum_gates(),
+                        OperationType::Max => self.generate_max_gates(),
+                        OperationType::Const => vec![],
+                        OperationType::RmAxis => vec![], // Shape operation, no gates needed
+                        OperationType::Reshape => vec![], // Shape operation, no gates needed
+                    };
+
+                    // Add gates to circuit
+                    gates.extend(node_gates);
                 }
                 NodeType::SubGraph { .. } => {
-                    // Handle subgraph nodes (implement later)
-                    todo!("Subgraph support not yet implemented");
+                    // Subgraphs not supported yet
                 }
             }
         }
-        Ok(())
+
+        gates
     }
 
-    /// Convert a regular computation node to ZK circuit gates
-    fn convert_computation_node(
-        &mut self,
-        node_idx: usize,
-        node: &SerializableNode,
-    ) -> Result<(), anyhow::Error> {
-        // Try to identify the operation
-        if let Some(op) = operations::identify_operation(node) {
-            // Convert operation to circuit gates
-            let gates = match op {
-                OnnxOperation::MatMul { m, n, k } => {
-                    self.wire_manager.create_matmul_circuit(m, n, k)
-                }
-                OnnxOperation::Relu | OnnxOperation::Max => {
-                    // Create ReLU/Max gates
-                    let row = self.wire_manager.next_row();
-                    vec![
-                        CircuitGate::new(
-                            GateType::RangeCheck0,
-                            [Wire::new(row, 0); 7],
-                            vec![],
-                        ),
-                        CircuitGate::new(
-                            GateType::Generic,
-                            [Wire::new(row + 1, 0); 7],
-                            vec![],
-                        ),
-                    ]
-                }
-                OnnxOperation::Sigmoid => {
-                    // Create Sigmoid gate
-                    let row = self.wire_manager.next_row();
-                    vec![CircuitGate::new(
-                        GateType::Generic,
-                        [Wire::new(row, 0); 7],
-                        vec![],
-                    )]
-                }
-                OnnxOperation::Add | OnnxOperation::EinSum => {
-                    // Create Add/EinSum gate
-                    let row = self.wire_manager.next_row();
-                    vec![CircuitGate::new(
-                        GateType::ForeignFieldAdd,
-                        [Wire::new(row, 0); 7],
-                        vec![],
-                    )]
-                }
-                OnnxOperation::Const => {
-                    // Const nodes don't need any gates as they're just values
-                    vec![]
-                }
-            };
+    /// Generate gates for matrix multiplication
+    fn generate_matmul_gates(&mut self, m: usize, n: usize, k: usize) -> Vec<CircuitGate<Fp>> {
+        let mut gates = Vec::new();
+        let start_row = self.current_row;
 
-            // Add gates to constraint system
-            for gate in gates {
-                self.constraint_system.gates.push(gate);
+        // For each output element
+        for i in 0..m {
+            for j in 0..n {
+                // For each element in dot product
+                for l in 0..k {
+                    // Multiplication gate
+                    gates.push(CircuitGate::new(
+                        GateType::ForeignFieldMul,
+                        [Wire::new(self.current_row, 0); 7],
+                        vec![],
+                    ));
+                    self.current_row += 1;
+
+                    // Addition gate (except for first element)
+                    if l > 0 {
+                        gates.push(CircuitGate::new(
+                            GateType::ForeignFieldAdd,
+                            [Wire::new(self.current_row, 0); 7],
+                            vec![],
+                        ));
+                        self.current_row += 1;
+                    }
+                }
             }
-
-            Ok(())
-        } else {
-            anyhow::bail!("Unsupported operation type for node {}", node_idx)
         }
+
+        // Record node info
+        self.nodes.push(ZkNode {
+            op_type: OperationType::MatMul,
+            start_row,
+            num_rows: self.current_row - start_row,
+            gates: gates.clone(),
+        });
+
+        gates
     }
 
-    /// Verify the circuit
-    pub fn verify(&self) -> Result<bool, anyhow::Error> {
-        // TODO: Implement circuit verification using Kimchi's verification system
-        Ok(true)
+    /// Generate gates for ReLU activation
+    fn generate_relu_gates(&mut self) -> Vec<CircuitGate<Fp>> {
+        let mut gates = Vec::new();
+        let start_row = self.current_row;
+
+        // Range check gate
+        gates.push(CircuitGate::new(
+            GateType::RangeCheck0,
+            [Wire::new(self.current_row, 0); 7],
+            vec![],
+        ));
+        self.current_row += 1;
+
+        // Generic gate for max(0,x)
+        gates.push(CircuitGate::new(
+            GateType::Generic,
+            [Wire::new(self.current_row, 0); 7],
+            vec![],
+        ));
+        self.current_row += 1;
+
+        // Record node info
+        self.nodes.push(ZkNode {
+            op_type: OperationType::Relu,
+            start_row,
+            num_rows: 2,
+            gates: gates.clone(),
+        });
+
+        gates
+    }
+
+    /// Generate gates for sigmoid activation
+    fn generate_sigmoid_gates(&mut self) -> Vec<CircuitGate<Fp>> {
+        let mut gates = Vec::new();
+        let start_row = self.current_row;
+
+        // Generic gate for sigmoid computation
+        gates.push(CircuitGate::new(
+            GateType::Generic,
+            [Wire::new(self.current_row, 0); 7],
+            vec![],
+        ));
+        self.current_row += 1;
+
+        // Record node info
+        self.nodes.push(ZkNode {
+            op_type: OperationType::Sigmoid,
+            start_row,
+            num_rows: 1,
+            gates: gates.clone(),
+        });
+
+        gates
+    }
+
+    /// Generate gates for addition
+    fn generate_add_gates(&mut self) -> Vec<CircuitGate<Fp>> {
+        let mut gates = Vec::new();
+        let start_row = self.current_row;
+
+        // Addition gate
+        gates.push(CircuitGate::new(
+            GateType::ForeignFieldAdd,
+            [Wire::new(self.current_row, 0); 7],
+            vec![],
+        ));
+        self.current_row += 1;
+
+        // Record node info
+        self.nodes.push(ZkNode {
+            op_type: OperationType::Add,
+            start_row,
+            num_rows: 1,
+            gates: gates.clone(),
+        });
+
+        gates
+    }
+
+    /// Generate gates for EinSum operation
+    fn generate_einsum_gates(&mut self) -> Vec<CircuitGate<Fp>> {
+        // Similar to MatMul for now
+        let mut gates = Vec::new();
+        let start_row = self.current_row;
+
+        // Generic gate for EinSum computation
+        gates.push(CircuitGate::new(
+            GateType::Generic,
+            [Wire::new(self.current_row, 0); 7],
+            vec![],
+        ));
+        self.current_row += 1;
+
+        // Record node info
+        self.nodes.push(ZkNode {
+            op_type: OperationType::EinSum,
+            start_row,
+            num_rows: 1,
+            gates: gates.clone(),
+        });
+
+        gates
+    }
+
+    /// Generate gates for max operation
+    fn generate_max_gates(&mut self) -> Vec<CircuitGate<Fp>> {
+        // Similar to ReLU
+        let mut gates = Vec::new();
+        let start_row = self.current_row;
+
+        // Range check gate
+        gates.push(CircuitGate::new(
+            GateType::RangeCheck0,
+            [Wire::new(self.current_row, 0); 7],
+            vec![],
+        ));
+        self.current_row += 1;
+
+        // Generic gate for max computation
+        gates.push(CircuitGate::new(
+            GateType::Generic,
+            [Wire::new(self.current_row, 0); 7],
+            vec![],
+        ));
+        self.current_row += 1;
+
+        // Record node info
+        self.nodes.push(ZkNode {
+            op_type: OperationType::Max,
+            start_row,
+            num_rows: 2,
+            gates: gates.clone(),
+        });
+
+        gates
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_zk_proof_generator_creation() {
-        // TODO: Implement tests for circuit generation
+impl Default for ZkProofGenerator {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -30,6 +30,10 @@ pub enum OnnxOperation {
     Max,
     /// Constant value
     Const,
+    /// Remove axis operation (used in flattening)
+    RmAxis,
+    /// Reshape operation
+    Reshape,
 }
 
 impl OnnxOperation {
@@ -123,8 +127,8 @@ impl OnnxOperation {
                 Ok(gates)
             }
 
-            OnnxOperation::Const => {
-                // Const nodes don't need any gates as they're just values
+            OnnxOperation::Const | OnnxOperation::RmAxis | OnnxOperation::Reshape => {
+                // These operations don't need any gates as they're just shape operations
                 Ok(vec![])
             }
         }
@@ -156,6 +160,8 @@ pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
         OperationType::Add => Some(OnnxOperation::Add),
         OperationType::EinSum => Some(OnnxOperation::EinSum),
         OperationType::Max => Some(OnnxOperation::Max),
+        OperationType::RmAxis => Some(OnnxOperation::RmAxis),
+        OperationType::Reshape => Some(OnnxOperation::Reshape),
     }
 }
 
@@ -167,13 +173,13 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found Const operation");
             Some(OperationType::Const)
         },
-        name if name == Cow::from("MatMul") || name == Cow::from("Gemm") || name == Cow::from("EinSum") => {
+        name if name == Cow::from("MatMul") || name == Cow::from("Gemm") => {
             println!("Found matrix operation: {}", name);
-            if name == Cow::from("EinSum") {
-                Some(OperationType::EinSum)
-            } else {
-                Some(OperationType::MatMul)
-            }
+            Some(OperationType::MatMul)
+        },
+        name if name == Cow::from("EinSum") => {
+            println!("Found matrix operation: {}", name);
+            Some(OperationType::EinSum)
         },
         name if name == Cow::from("Relu") || name == Cow::from("Max") => {
             println!("Found ReLU/Max operation: {}", name);
@@ -184,21 +190,28 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             }
         },
         name if name == Cow::from("Sigmoid") => {
-            println!("Found Sigmoid operation: {}", name);
+            println!("Found Sigmoid operation");
             Some(OperationType::Sigmoid)
         },
         name if name == Cow::from("Add") => {
             println!("Found Add operation: {}", name);
             Some(OperationType::Add)
         },
+        name if name == Cow::from("Reshape") => {
+            println!("Found Reshape operation");
+            Some(OperationType::Reshape)
+        },
+        name if name == Cow::from("Rm") => {
+            println!("Unknown operation: RmAxis");
+            Some(OperationType::RmAxis)
+        },
+        name if name == Cow::from("Source") => {
+            println!("Found Input operation");
+            Some(OperationType::Input)
+        },
         name => {
-            if node.inputs.is_empty() {
-                println!("Found Input operation");
-                Some(OperationType::Input)
-            } else {
-                println!("Unknown operation: {}", name);
-                None
-            }
+            println!("Unknown operation: {}", name);
+            None
         }
     }
 }

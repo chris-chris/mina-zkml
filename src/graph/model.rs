@@ -59,6 +59,23 @@ pub struct Model {
     pub visibility: VarVisibility,
 }
 
+/// Represents different types of nodes in the graph
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum NodeType {
+    /// A regular computation node
+    Node(SerializableNode),
+    /// A subgraph node (typically used for control flow operations like loops)
+    SubGraph {
+        model: Box<Model>,
+        inputs: Vec<SerializableOutletId>,
+        idx: usize,
+        out_dims: Vec<Vec<usize>>,
+        out_scales: Vec<i32>,
+        output_mappings: Vec<Vec<OutputMapping>>,
+        input_mappings: Vec<InputMapping>,
+    },
+}
+
 /// Represents the parsed neural network graph structure
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParsedNodes {
@@ -191,6 +208,10 @@ impl ParsedNodes {
                 }
             },
             OperationType::MatMul | OperationType::EinSum => {
+                if inputs.is_empty() {
+                    return Err(GraphError::InvalidInputShape);
+                }
+            
                 let input = &inputs[0];
                 let second_matrix = if inputs.len() > 1 {
                     &inputs[1]
@@ -200,24 +221,41 @@ impl ParsedNodes {
                     println!("The weights are missing for MatMul/EinSum {:?}", &node);
                     return Err(GraphError::InvalidInputShape);
                 };
-
-                // Get matrix dimensions from node's output dimensions
-                let m = node.out_dims[0]; // Output rows
-                let n = if node.out_dims.len() > 1 { node.out_dims[1] } else { 1 }; // Output columns
-                let k = input.len(); // Inner dimension
-
-                // Perform matrix multiplication
-                let mut output = vec![0.0; m * n];
-                for i in 0..m {
-                    for j in 0..n {
-                        let mut sum = 0.0;
-                        for l in 0..k {
-                            sum += input[l] * second_matrix[j * k + l];
-                        }
-                        output[i * n + j] = sum;
-                    }
+            
+                println!("Debug: input length = {}", input.len());
+                println!("Debug: second_matrix length = {}", second_matrix.len());
+                println!("Debug: out_dims = {:?}", node.out_dims);
+            
+                let input_dim = input.len(); // Input size (k)
+            
+                // Compute the output dimension (ignoring batch size)
+                let output_dim = if node.out_dims.len() > 1 {
+                    node.out_dims.iter().skip(1).product::<usize>() // Product of all dims except batch size
+                } else {
+                    node.out_dims[0] // Single-dimensional output
+                };
+            
+                // Validate weight matrix dimensions
+                let expected_weight_size = input_dim * output_dim;
+                if second_matrix.len() != expected_weight_size {
+                    println!("Invalid matrix dimensions for MatMul");
+                    println!("Input dimension: {}", input_dim);
+                    println!("Output dimensions: {:?}", node.out_dims);
+                    println!("Expected weight matrix size: {}", expected_weight_size);
+                    println!("Actual weight matrix size: {}", second_matrix.len());
+                    return Err(GraphError::InvalidInputShape);
                 }
-
+            
+                // Perform matrix multiplication
+                let mut output = vec![0.0; output_dim];
+                for i in 0..output_dim {
+                    let mut sum = 0.0;
+                    for j in 0..input_dim {
+                        sum += input[j] * second_matrix[j * output_dim + i];
+                    }
+                    output[i] = sum;
+                }
+            
                 Ok(vec![output])
             },
             OperationType::Add => {
@@ -235,7 +273,7 @@ impl ParsedNodes {
                     return Err(GraphError::InvalidInputShape);
                 }
                 Ok(vec![a.iter().zip(b.iter()).map(|(&x, &y)| x + y).collect()])
-            }
+            },
             OperationType::Relu | OperationType::Max => {
                 if inputs.is_empty() {
                     println!("Invalid input length for Relu/Max");
@@ -243,10 +281,10 @@ impl ParsedNodes {
                 }
 
                 let result = inputs[0].iter()
-                    .map(|&x| x.max(0.0))
+                    .map(|&x| x.max(0.0))  // This might need to change based on Max requirements
                     .collect();
                 Ok(vec![result])
-            }
+            },
             OperationType::Sigmoid => {
                 if inputs.is_empty() {
                     println!("Invalid input length for Sigmoid");
@@ -261,14 +299,41 @@ impl ParsedNodes {
 
                 Ok(vec![inputs[0]
                     .iter()
-                    .map(|&x| 1.0 / (1.0 + (-x).exp()))
+                    .map(|&x| {
+                        // Add numerical stability
+                        if x > 20.0 {
+                            1.0
+                        } else if x < -20.0 {
+                            0.0
+                        } else {
+                            1.0 / (1.0 + (-x).exp())
+                        }
+                    })
                     .collect()])
-            }
-            OperationType::RmAxis | OperationType::Reshape => {
+            },
+            OperationType::RmAxis => {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInputShape);
                 }
-                // These operations just pass through the data as they're shape operations
+                
+                // For MNIST, we're flattening a 28x28 image into a 784-dimensional vector
+                // The input shape should match the expected output dimensions
+                let expected_size: usize = node.out_dims.iter().product();
+                let input = &inputs[0];
+                
+                if input.len() != expected_size {
+                    println!("Invalid input shape for RmAxis: got {}, expected {}", input.len(), expected_size);
+                    return Err(GraphError::InvalidInputShape);
+                }
+                
+                // The input is already flattened, so we just need to ensure it's in the right format
+                Ok(vec![input.clone()])
+            },
+            OperationType::Reshape => {
+                if inputs.is_empty() {
+                    return Err(GraphError::InvalidInputShape);
+                }
+                // Reshape operation just passes through the data as it's a shape operation
                 Ok(vec![inputs[0].clone()])
             }
         }
@@ -324,23 +389,6 @@ impl ParsedNodes {
     }
 }
 
-/// Represents different types of nodes in the graph
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NodeType {
-    /// A regular computation node
-    Node(SerializableNode),
-    /// A subgraph node (typically used for control flow operations like loops)
-    SubGraph {
-        model: Box<Model>,
-        inputs: Vec<SerializableOutletId>,
-        idx: usize,
-        out_dims: Vec<Vec<usize>>,
-        out_scales: Vec<i32>,
-        output_mappings: Vec<Vec<OutputMapping>>,
-        input_mappings: Vec<InputMapping>,
-    },
-}
-
 /// Serializable version of Node that excludes TypedOp
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SerializableNode {
@@ -360,22 +408,28 @@ pub struct SerializableNode {
 
 impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
     fn from(node: &Node<TypedFact, Box<dyn TypedOp>>) -> Self {
-        let op_type = if node.op.name() == "Const" {
+        let op_name = node.op.name();
+        let op_type = if op_name == "Const" {
+            println!("Found Const operation");
             OperationType::Const
         } else if node.inputs.is_empty() {
+            println!("Found Input operation");
             OperationType::Input
+        } else if op_name.starts_with("Rm(") {
+            println!("Found RmAxis operation");
+            OperationType::RmAxis
         } else if let Some(op_type) = identify_tract_operation(node) {
             op_type
         } else {
-            println!("Unknown operation: {}", node.op.name());
+            println!("Unknown operation: {}", op_name);
             OperationType::RmAxis // Default to RmAxis for unknown operations
         };
 
         println!("Node From : {:?}", node);
-        println!("Node op_type: {:?}", node.op.name().as_ref());
+        println!("Node op_type: {:?}", op_name.as_ref());
 
         // Extract weights and biases based on node type
-        let (weights, bias) = match node.op.name().as_ref() {
+        let (weights, bias) = match op_name.as_ref() {
             "Const" => {
                 if let Some(const_op) = node.op.downcast_ref::<Const>() {
                     if let Ok(tensor_data) = const_op.0.as_slice::<f32>() {

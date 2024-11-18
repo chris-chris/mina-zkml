@@ -168,7 +168,8 @@ pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
 /// Identifies the operation type from a tract node
 pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
     // Check operation type based on the node's operation name
-    match node.op.name() {
+    let op_name = node.op.name();
+    match op_name {
         name if name == Cow::from("Const") => {
             println!("Found Const operation");
             Some(OperationType::Const)
@@ -201,8 +202,8 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found Reshape operation");
             Some(OperationType::Reshape)
         },
-        name if name == Cow::from("Rm") => {
-            println!("Unknown operation: RmAxis");
+        name if name.starts_with("Rm(") => {
+            println!("Found RmAxis operation");
             Some(OperationType::RmAxis)
         },
         name if name == Cow::from("Source") => {

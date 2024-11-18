@@ -65,6 +65,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nRunning inference...");
     let result = model.graph.execute(&[input])?;
     
+    //Result
+    println!("Result: {:?}", result);
+
     // Print the output probabilities
     println!("\nOutput probabilities for digits 0-9:");
     if let Some(probabilities) = result.get(0) {

@@ -1,3 +1,4 @@
+
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, Copy, PartialEq)]
@@ -20,4 +21,6 @@ pub enum GraphError {
     CyclicDependency,
     #[error("Unsupported operation")]
     UnsupportedOperation,
+    #[error("Invalid Output Shape")]
+    InvalidOutputShape,
 }

@@ -6,6 +6,9 @@ use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
 };
+use std::fs::OpenOptions;
+use std::io::Write;
+use chrono::Local;
 use tract_onnx::{prelude::*, tract_hir::ops::scan::Scan, tract_hir::ops::konst::Const};
 
 use crate::zk::operations::identify_tract_operation;
@@ -92,6 +95,156 @@ impl ParsedNodes {
     pub fn num_inputs(&self) -> usize {
         self.inputs.len()
     }
+
+    pub fn log_weights_and_biases(&self) -> Result<(), GraphError> {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("weights_biases_log.txt")
+            .map_err(|_| GraphError::UnableToSaveModel)?;
+
+        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+        
+        writeln!(file, "\n[{}] Weights and Biases Analysis", timestamp)
+            .map_err(|_| GraphError::UnableToSaveModel)?;
+        
+        writeln!(file, "----------------------------------------")
+            .map_err(|_| GraphError::UnableToSaveModel)?;
+
+        // Build connection map
+        let mut const_connections: HashMap<usize, Vec<(usize, OperationType)>> = HashMap::new();
+        for (node_idx, node_type) in &self.nodes {
+            if let NodeType::Node(node) = node_type {
+                for (input_idx, _slot) in &node.inputs {
+                    if let Some(NodeType::Node(input_node)) = self.nodes.get(input_idx) {
+                        if matches!(input_node.op_type, OperationType::Const) {
+                            const_connections
+                                .entry(*input_idx)
+                                .or_default()
+                                .push((*node_idx, node.op_type.clone()));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Create a sorted list of nodes for consistent output
+        let mut node_indices: Vec<_> = self.nodes.keys().collect();
+        node_indices.sort();
+
+        for &node_idx in &node_indices {
+            if let Some(NodeType::Node(node)) = self.nodes.get(&node_idx) {
+                if matches!(node.op_type, OperationType::Const) {
+                    // Node header
+                    writeln!(file, "\nConst Node {}", node_idx)
+                        .map_err(|_| GraphError::UnableToSaveModel)?;
+                    
+                    // Dimensions
+                    writeln!(file, "Dimensions: {:?}", node.out_dims)
+                        .map_err(|_| GraphError::UnableToSaveModel)?;
+                    
+                    // Consumers
+                    if let Some(consumers) = const_connections.get(&node_idx) {
+                        writeln!(file, "Used by:").map_err(|_| GraphError::UnableToSaveModel)?;
+                        for (consumer_idx, op_type) in consumers {
+                            writeln!(file, "  - Node {} ({:?})", consumer_idx, op_type)
+                                .map_err(|_| GraphError::UnableToSaveModel)?;
+                        }
+                    }
+
+                    // Values
+                    if let Some(weights) = &node.weights {
+                        writeln!(file, "\nAll Values:").map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(file, "Total elements: {}", weights.len())
+                            .map_err(|_| GraphError::UnableToSaveModel)?;
+
+                        // Write all values as a comma-separated list within brackets
+                        write!(file, "[").map_err(|_| GraphError::UnableToSaveModel)?;
+                        for (i, &value) in weights.iter().enumerate() {
+                            if i > 0 {
+                                write!(file, ", ").map_err(|_| GraphError::UnableToSaveModel)?;
+                            }
+                            write!(file, "{:.6}", value)
+                                .map_err(|_| GraphError::UnableToSaveModel)?;
+                        }
+                        writeln!(file, "]").map_err(|_| GraphError::UnableToSaveModel)?;
+                        
+                        // Statistics
+                        let min = weights.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+                        let max = weights.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+                        let sum: f32 = weights.iter().sum();
+                        let mean = sum / weights.len() as f32;
+                        
+                        // Count non-zero elements
+                        let non_zero_count = weights.iter()
+                            .filter(|&&x| x != 0.0)
+                            .count();
+                        
+                        writeln!(file, "\nStatistics:").map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(file, "  Total elements: {}", weights.len())
+                            .map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(file, "  Non-zero elements: {}", non_zero_count)
+                            .map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(file, "  Zero elements: {}", weights.len() - non_zero_count)
+                            .map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(file, "  Sparsity: {:.2}%", 
+                            (weights.len() - non_zero_count) as f32 / weights.len() as f32 * 100.0)
+                            .map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(file, "  Min: {:.6}", min)
+                            .map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(file, "  Max: {:.6}", max)
+                            .map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(file, "  Mean: {:.6}", mean)
+                            .map_err(|_| GraphError::UnableToSaveModel)?;
+                    }
+
+                    writeln!(file, "----------------------------------------")
+                        .map_err(|_| GraphError::UnableToSaveModel)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn log_tensor_values(&self, node_idx: usize, op_type: &OperationType, outputs: &[Vec<f32>]) -> Result<(), GraphError> {
+        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("tensor_log.txt")
+            .map_err(|_| GraphError::UnableToSaveModel)?;
+
+        // Write header with timestamp, node info
+        writeln!(
+            file,
+            "[{}] Node {}: {:?}",
+            timestamp, node_idx, op_type
+        ).map_err(|_| GraphError::UnableToSaveModel)?;
+
+        // Write each output tensor on its own line
+        for (i, tensor) in outputs.iter().enumerate() {
+            // Write output number
+            write!(file, "Output {}: [", i).map_err(|_| GraphError::UnableToSaveModel)?;
+            
+            // Write all values with consistent formatting
+            for (j, value) in tensor.iter().enumerate() {
+                if j > 0 {
+                    write!(file, ", ").map_err(|_| GraphError::UnableToSaveModel)?;
+                }
+                write!(file, "{:.6}", value).map_err(|_| GraphError::UnableToSaveModel)?;
+            }
+            
+            // Close the array and add length info
+            writeln!(file, "] (length: {})", tensor.len()).map_err(|_| GraphError::UnableToSaveModel)?;
+        }
+        
+        // Add blank line between node outputs for readability
+        writeln!(file).map_err(|_| GraphError::UnableToSaveModel)?;
+
+        Ok(())
+    }
+
 
     /// Returns a vector of output scales for all output nodes
     pub fn get_output_scales(&self) -> Result<Vec<i32>, GraphError> {
@@ -197,7 +350,7 @@ impl ParsedNodes {
         node: &SerializableNode,
         inputs: &[Vec<f32>],
     ) -> Result<Vec<Vec<f32>>, GraphError> {
-        match node.op_type {
+        let result = match node.op_type {
             OperationType::Input => Ok(inputs.to_vec()),
             OperationType::Const => {
                 if let Some(weights) = &node.weights {
@@ -212,46 +365,34 @@ impl ParsedNodes {
                     return Err(GraphError::InvalidInputShape);
                 }
             
-                let input = &inputs[0];
-                let second_matrix = if inputs.len() > 1 {
+                let input = &inputs[0];  // Shape: [784]
+                let weights = if inputs.len() > 1 {
                     &inputs[1]
                 } else if let Some(weights) = &node.weights {
                     weights
                 } else {
-                    println!("The weights are missing for MatMul/EinSum {:?}", &node);
                     return Err(GraphError::InvalidInputShape);
                 };
             
-                println!("Debug: input length = {}", input.len());
-                println!("Debug: second_matrix length = {}", second_matrix.len());
-                println!("Debug: out_dims = {:?}", node.out_dims);
-            
-                let input_dim = input.len(); // Input size (k)
-            
-                // Compute the output dimension (ignoring batch size)
-                let output_dim = if node.out_dims.len() > 1 {
-                    node.out_dims.iter().skip(1).product::<usize>() // Product of all dims except batch size
-                } else {
-                    node.out_dims[0] // Single-dimensional output
-                };
-            
-                // Validate weight matrix dimensions
-                let expected_weight_size = input_dim * output_dim;
-                if second_matrix.len() != expected_weight_size {
-                    println!("Invalid matrix dimensions for MatMul");
-                    println!("Input dimension: {}", input_dim);
-                    println!("Output dimensions: {:?}", node.out_dims);
-                    println!("Expected weight matrix size: {}", expected_weight_size);
-                    println!("Actual weight matrix size: {}", second_matrix.len());
+                let input_dim = input.len();  // 784
+                let output_dim = node.out_dims.iter().product();  // 512
+                let weight_rows = output_dim;  // 512 (PyTorch convention)
+                let weight_cols = input_dim;   // 784 (PyTorch convention)
+                
+                // Verify dimensions match
+                if weights.len() != weight_rows * weight_cols {
                     return Err(GraphError::InvalidInputShape);
                 }
             
-                // Perform matrix multiplication
                 let mut output = vec![0.0; output_dim];
-                for i in 0..output_dim {
+                
+                // PyTorch-style matrix multiplication
+                for i in 0..output_dim {  // For each output element
                     let mut sum = 0.0;
-                    for j in 0..input_dim {
-                        sum += input[j] * second_matrix[j * output_dim + i];
+                    for j in 0..input_dim {  // For each input element
+                        // weights are stored in [output_dim, input_dim] format
+                        let weight_idx = i * input_dim + j;  // Row-major indexing
+                        sum += input[j] * weights[weight_idx];
                     }
                     output[i] = sum;
                 }
@@ -269,38 +410,33 @@ impl ParsedNodes {
                 };
                 
                 if a.len() != b.len() {
-                    println!("Invalid input shape for Add");
                     return Err(GraphError::InvalidInputShape);
                 }
                 Ok(vec![a.iter().zip(b.iter()).map(|(&x, &y)| x + y).collect()])
             },
             OperationType::Relu | OperationType::Max => {
                 if inputs.is_empty() {
-                    println!("Invalid input length for Relu/Max");
                     return Err(GraphError::InvalidInputShape);
                 }
 
                 let result = inputs[0].iter()
-                    .map(|&x| x.max(0.0))  // This might need to change based on Max requirements
+                    .map(|&x| x.max(0.0))
                     .collect();
                 Ok(vec![result])
             },
             OperationType::Sigmoid => {
                 if inputs.is_empty() {
-                    println!("Invalid input length for Sigmoid");
                     return Err(GraphError::InvalidInputShape);
                 }
 
                 let expected_size: usize = node.out_dims.iter().product();
                 if inputs[0].len() != expected_size {
-                    println!("Invalid input shape for Sigmoid");
                     return Err(GraphError::InvalidInputShape);
                 }
 
                 Ok(vec![inputs[0]
                     .iter()
                     .map(|&x| {
-                        // Add numerical stability
                         if x > 20.0 {
                             1.0
                         } else if x < -20.0 {
@@ -316,27 +452,31 @@ impl ParsedNodes {
                     return Err(GraphError::InvalidInputShape);
                 }
                 
-                // For MNIST, we're flattening a 28x28 image into a 784-dimensional vector
-                // The input shape should match the expected output dimensions
                 let expected_size: usize = node.out_dims.iter().product();
                 let input = &inputs[0];
                 
                 if input.len() != expected_size {
-                    println!("Invalid input shape for RmAxis: got {}, expected {}", input.len(), expected_size);
                     return Err(GraphError::InvalidInputShape);
                 }
                 
-                // The input is already flattened, so we just need to ensure it's in the right format
                 Ok(vec![input.clone()])
             },
             OperationType::Reshape => {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInputShape);
                 }
-                // Reshape operation just passes through the data as it's a shape operation
                 Ok(vec![inputs[0].clone()])
             }
-        }
+        };
+
+        // Log the tensor values after each operation
+        // if let Ok(outputs) = &result {
+        //     if let Err(e) = self.log_tensor_values(node.id, &node.op_type, outputs) {
+        //         println!("Warning: Failed to log tensor values: {:?}", e);
+        //     }
+        // }
+
+        result
     }
 
     /// Perform topological sort of nodes
@@ -443,6 +583,7 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
             },
             _ => (None, None)
         };
+
 
         SerializableNode {
             inputs: node.inputs.iter().map(|o| (o.node, o.slot)).collect(),

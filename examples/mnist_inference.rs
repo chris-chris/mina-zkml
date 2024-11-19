@@ -17,13 +17,17 @@ fn preprocess_image(img_path: &str) -> Result<Vec<f32>, Box<dyn std::error::Erro
     // Convert to f32 and normalize to [0, 1]
     let pixels: Vec<f32> = resized.into_raw()
         .into_iter()
-        .map(|x| (x as f32) / 255.0)
+        .map(|x| x as f32)
+        .collect();
+
+    //Apply normalization
+    let pixels: Vec<f32> = pixels.into_iter()
+        .map(|x| (x / 255.0 - 0.1307) / 0.3081)
         .collect();
 
     // Create a batch dimension by wrapping the flattened pixels
     let mut input = Vec::with_capacity(1 * 28 * 28);
-    input.extend_from_slice(&pixels);
-    
+    input.extend_from_slice(&pixels);    
     Ok(input)
 }
 
@@ -56,10 +60,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Input nodes: {:?}", model.graph.inputs);
     println!("Output nodes: {:?}", model.graph.outputs);
 
+
     // Load and preprocess the image
     println!("\nLoading and preprocessing image...");
-    let input = preprocess_image("models/data/1085.png")?;
-    println!("Input shape: {} pixels", input.len());
+    let input = preprocess_image("models/data/1052.png")?;
 
     // Execute the model
     println!("\nRunning inference...");

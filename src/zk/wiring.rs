@@ -1,219 +1,143 @@
 use kimchi::circuits::{
-    gate::{CircuitGate, Connect},
+    gate::{CircuitGate, GateType},
     wires::Wire,
 };
+use ark_ff::Zero;
 use mina_curves::pasta::Fp;
 
-/// Helper struct for managing wire connections in a circuit
-pub struct WireManager {
+use crate::graph::model::{Model, NodeType, OperationType};
+
+const MIN_DOMAIN_SIZE: usize = 256;
+const ZK_ROWS: usize = 50;  // Increased ZK rows for safety
+
+pub struct ModelCircuitBuilder {
     current_row: usize,
-    wire_map: std::collections::HashMap<(usize, usize), Wire>,
 }
 
-impl WireManager {
-    pub fn new(start_row: usize) -> Self {
-        Self {
-            current_row: start_row,
-            wire_map: std::collections::HashMap::new(),
-        }
+impl ModelCircuitBuilder {
+    pub fn new() -> Self {
+        Self { current_row: 0 }
     }
 
-    /// Get the next available row
-    pub fn next_row(&mut self) -> usize {
-        let row = self.current_row;
-        self.current_row += 1;
-        row
-    }
-
-    /// Connect two gates together
-    pub fn connect_gates(
-        &mut self,
-        gates: &mut Vec<CircuitGate<Fp>>,
-        from_gate: usize,
-        from_slot: usize,
-        to_gate: usize,
-        to_slot: usize,
-    ) {
-        // Store the wires we want to swap
-        let wire_from = gates[from_gate].wires[from_slot];
-        let wire_to = gates[to_gate].wires[to_slot];
-
-        // Update the connections
-        gates[from_gate].wires[from_slot] = wire_to;
-        gates[to_gate].wires[to_slot] = wire_from;
-    }
-
-    /// Create a matrix multiplication circuit
-    pub fn create_matmul_circuit(
-        &mut self,
-        m: usize,
-        n: usize,
-        k: usize,
-    ) -> Vec<CircuitGate<Fp>> {
+    pub fn build_circuit(&mut self, model: &Model) -> Vec<CircuitGate<Fp>> {
         let mut gates = Vec::new();
-        
-        // For each output element (m x n matrix)
-        for i in 0..m {
-            for j in 0..n {
-                let mut accumulator_wire = None;
-                
-                // For each element in the dot product (k elements)
-                for l in 0..k {
-                    let row = self.next_row();
-                    
-                    // Create multiplication gate
-                    let mul_gate = CircuitGate::new(
-                        kimchi::circuits::gate::GateType::ForeignFieldMul,
-                        [Wire::new(row, 0); 7],
-                        vec![],
-                    );
-                    let mul_gate_idx = gates.len();
-                    gates.push(mul_gate);
 
-                    if let Some(acc_wire) = accumulator_wire {
-                        // Create addition gate to accumulate
-                        let add_row = self.next_row();
-                        let add_gate = CircuitGate::new(
-                            kimchi::circuits::gate::GateType::ForeignFieldAdd,
-                            [Wire::new(add_row, 0); 7],
-                            vec![],
-                        );
-                        let add_gate_idx = gates.len();
-                        gates.push(add_gate);
-
-                        // Store the connection in wire_map for later use
-                        self.wire_map.insert((add_gate_idx, 0), Wire::new(row, 0));
-                        self.wire_map.insert((add_gate_idx, 1), acc_wire);
-                        
-                        // Update accumulator wire
-                        accumulator_wire = Some(Wire::new(add_row, 0));
-                    } else {
-                        // First multiplication, no need for addition
-                        accumulator_wire = Some(Wire::new(row, 0));
-                    }
-                }
+        // Calculate total number of public inputs
+        let num_public = model.graph.inputs.iter().map(|&idx| {
+            if let NodeType::Node(node) = &model.graph.nodes[&idx] {
+                node.out_dims.iter().product()
+            } else {
+                0
             }
+        }).sum();
+
+        // Add public input gates
+        for i in 0..num_public {
+            gates.push(CircuitGate {
+                typ: GateType::Generic,
+                wires: self.create_wires(i),
+                coeffs: vec![Fp::from(1u64)],
+            });
+            self.current_row += 1;
         }
 
-        // Apply all stored connections
-        let mut connections = Vec::new();
-        for ((gate_idx, slot), wire) in self.wire_map.iter() {
-            connections.push((*gate_idx, *slot, wire.row, wire.col));
-        }
-        
-        // Apply connections
-        for (gate_idx, slot, row, col) in connections {
-            let mut gate = &mut gates[gate_idx];
-            gate.wires[slot] = Wire::new(row, col);
-        }
-
-        gates
-    }
-
-    /// Create a convolution circuit
-    pub fn create_conv_circuit(
-        &mut self,
-        input_dims: (usize, usize, usize), // (channels, height, width)
-        kernel_dims: (usize, usize, usize), // (out_channels, kernel_height, kernel_width)
-        stride: (usize, usize),
-        padding: (usize, usize),
-    ) -> Vec<CircuitGate<Fp>> {
-        let mut gates = Vec::new();
-        
-        // Calculate output dimensions
-        let (in_c, in_h, in_w) = input_dims;
-        let (out_c, k_h, k_w) = kernel_dims;
-        let (stride_h, stride_w) = stride;
-        let (pad_h, pad_w) = padding;
-
-        let out_h = (in_h + 2 * pad_h - k_h) / stride_h + 1;
-        let out_w = (in_w + 2 * pad_w - k_w) / stride_w + 1;
-
-        // For each output position
-        for oc in 0..out_c {
-            for oh in 0..out_h {
-                for ow in 0..out_w {
-                    let mut accumulator_wire = None;
-
-                    // For each input channel and kernel position
-                    for ic in 0..in_c {
-                        for kh in 0..k_h {
-                            for kw in 0..k_w {
-                                let row = self.next_row();
-
-                                // Create multiplication gate for each kernel weight
-                                let mul_gate = CircuitGate::new(
-                                    kimchi::circuits::gate::GateType::ForeignFieldMul,
-                                    [Wire::new(row, 0); 7],
-                                    vec![],
-                                );
-                                let mul_gate_idx = gates.len();
-                                gates.push(mul_gate);
-
-                                if let Some(acc_wire) = accumulator_wire {
-                                    // Create addition gate to accumulate
-                                    let add_row = self.next_row();
-                                    let add_gate = CircuitGate::new(
-                                        kimchi::circuits::gate::GateType::ForeignFieldAdd,
-                                        [Wire::new(add_row, 0); 7],
-                                        vec![],
-                                    );
-                                    let add_gate_idx = gates.len();
-                                    gates.push(add_gate);
-
-                                    // Store the connection in wire_map for later use
-                                    self.wire_map.insert((add_gate_idx, 0), Wire::new(row, 0));
-                                    self.wire_map.insert((add_gate_idx, 1), acc_wire);
-                                    
-                                    // Update accumulator wire
-                                    accumulator_wire = Some(Wire::new(add_row, 0));
-                                } else {
-                                    // First multiplication, no need for addition
-                                    accumulator_wire = Some(Wire::new(row, 0));
-                                }
-                            }
+        // Process each node in topological order
+        let mut intermediate_rows = std::collections::HashMap::new();
+        for (idx, node) in &model.graph.nodes {
+            if let NodeType::Node(node) = node {
+                match node.op_type {
+                    OperationType::MatMul => {
+                        let output_size = node.out_dims.iter().product();
+                        for i in 0..output_size {
+                            gates.push(CircuitGate {
+                                typ: GateType::Generic,
+                                wires: self.create_wires(self.current_row + i),
+                                coeffs: vec![Fp::from(1u64)],
+                            });
                         }
-                    }
+                        intermediate_rows.insert(*idx, self.current_row);
+                        self.current_row += output_size;
+                    },
+                    OperationType::Relu => {
+                        let output_size = node.out_dims.iter().product();
+                        for i in 0..output_size {
+                            gates.push(CircuitGate {
+                                typ: GateType::Generic,
+                                wires: self.create_wires(self.current_row + i),
+                                coeffs: vec![Fp::from(1u64)],
+                            });
+                        }
+                        intermediate_rows.insert(*idx, self.current_row);
+                        self.current_row += output_size;
+                    },
+                    OperationType::Add => {
+                        let output_size = node.out_dims.iter().product();
+                        for i in 0..output_size {
+                            gates.push(CircuitGate {
+                                typ: GateType::Generic,
+                                wires: self.create_wires(self.current_row + i),
+                                coeffs: vec![Fp::from(1u64)],
+                            });
+                        }
+                        intermediate_rows.insert(*idx, self.current_row);
+                        self.current_row += output_size;
+                    },
+                    _ => {}
                 }
             }
         }
 
-        // Apply all stored connections
-        let mut connections = Vec::new();
-        for ((gate_idx, slot), wire) in self.wire_map.iter() {
-            connections.push((*gate_idx, *slot, wire.row, wire.col));
+        // Calculate required domain size
+        let required_size = std::cmp::max(
+            MIN_DOMAIN_SIZE,
+            self.next_power_of_two(self.current_row + ZK_ROWS)
+        );
+
+        // Add padding gates
+        while gates.len() < required_size - ZK_ROWS {
+            gates.push(CircuitGate {
+                typ: GateType::Zero,
+                wires: self.create_wires(self.current_row),
+                coeffs: vec![Fp::zero()],
+            });
+            self.current_row += 1;
         }
-        
-        // Apply connections
-        for (gate_idx, slot, row, col) in connections {
-            let mut gate = &mut gates[gate_idx];
-            gate.wires[slot] = Wire::new(row, col);
+
+        // Add zero-knowledge rows
+        for i in 0..ZK_ROWS {
+            gates.push(CircuitGate {
+                typ: GateType::Zero,
+                wires: self.create_wires(self.current_row + i),
+                coeffs: vec![Fp::zero()],
+            });
         }
 
         gates
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_wire_manager_matmul() {
-        let mut manager = WireManager::new(0);
-        let gates = manager.create_matmul_circuit(2, 2, 2);
-        assert!(gates.len() > 0);
+    fn next_power_of_two(&self, n: usize) -> usize {
+        let mut v = n;
+        v -= 1;
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        v |= v >> 8;
+        v |= v >> 16;
+        v |= v >> 32;
+        v += 1;
+        v
     }
 
-    #[test]
-    fn test_wire_manager_conv() {
-        let mut manager = WireManager::new(0);
-        let gates = manager.create_conv_circuit(
-            (3, 32, 32),   // Input: 3 channels, 32x32
-            (64, 3, 3),    // 64 3x3 kernels
-            (1, 1),        // Stride 1
-            (1, 1),        // Padding 1
-        );
-        assert!(gates.len() > 0);
+    fn create_wires(&self, row: usize) -> [Wire; 7] {
+        // Create a simple linear connection pattern
+        [
+            Wire::new(row, 0),     // Current row, main wire
+            Wire::new(row, 1),     // Current row, auxiliary wire 1
+            Wire::new(row, 2),     // Current row, auxiliary wire 2
+            Wire::new(row, 3),     // Current row, auxiliary wire 3
+            Wire::new(row, 4),     // Current row, auxiliary wire 4
+            Wire::new(row, 5),     // Current row, auxiliary wire 5
+            Wire::new(row, 6),     // Current row, auxiliary wire 6
+        ]
     }
 }

@@ -13,6 +13,7 @@ use tract_onnx::{prelude::*, tract_hir::ops::scan::Scan, tract_hir::ops::konst::
 
 use crate::zk::operations::identify_tract_operation;
 
+
 /// Represents a node output connection as (node_index, output_slot)
 pub type Outlet = (usize, usize);
 

@@ -15,6 +15,10 @@ path = "examples/perceptron.rs"
 name = "mnist_inference"
 path = "examples/mnist_inference.rs"
 
+[[example]]
+name = "zk_inference"
+path = "examples/zk_inference.rs"
+
 [dependencies]
 anyhow = "1.0.90"
 bincode = "1.3"
@@ -33,3 +37,7 @@ ark-poly = "0.4.0"
 ark-ec = "0.4.0"
 mina-curves = { git = "https://github.com/o1-labs/proof-systems" }
 chrono = "0.4.38"
+rand = "0.8.5"
+groupmap = { git = "https://github.com/o1-labs/proof-systems" }
+poly-commitment = { git = "https://github.com/o1-labs/proof-systems" }
+mina-poseidon = { git = "https://github.com/o1-labs/proof-systems" }

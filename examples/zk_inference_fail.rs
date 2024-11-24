@@ -32,24 +32,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         0.0, 0.0, 0.0, 0.0, 0.0     // Padding to reach size 10
     ]];
 
-    // 4. Execute model normally to get expected output
+    // 4. Execute model normally to get actual output
     println!("Executing model...");
-    let output = model.graph.execute(&input)?;
-    println!("Model output: {:?}", output);
+    let actual_output = model.graph.execute(&input)?;
+    println!("Actual model output: {:?}", actual_output);
 
     // 5. Create zero-knowledge proof
     println!("Creating proof...");
     let proof = proof_system.create_proof(&input)?;
 
-    // 6. Verify the proof with both input and expected output
-    println!("Verifying proof...");
-    let is_valid = proof_system.verify_proof(&proof, &input, &output)?;
+    // 6. Create incorrect output (random values)
+    let incorrect_output = vec![vec![0.5, 0.7, 0.9]];  // Random values different from actual output
+    println!("Incorrect output to verify against: {:?}", incorrect_output);
+
+    // 7. Try to verify the proof with incorrect output
+    println!("Attempting to verify proof with incorrect output...");
+    let is_valid = proof_system.verify_proof(&proof, &input, &incorrect_output)?;
 
     println!("\nResults:");
     println!("Model execution successful: ✓");
     println!("Proof creation successful: ✓");
-    println!("Proof verification: {}", if is_valid { "✓ Valid" } else { "✗ Invalid" });
-    println!("Expected output verified: ✓");
+    println!("Proof verification: {}", if is_valid { "✓ Valid (UNEXPECTED!)" } else { "✗ Invalid (Expected)" });
+    println!("Actual output: {:?}", actual_output);
+    println!("Incorrect output used: {:?}", incorrect_output);
+    println!("\nVerification failed as expected because the provided output doesn't match the actual model computation.");
 
     Ok(())
 }

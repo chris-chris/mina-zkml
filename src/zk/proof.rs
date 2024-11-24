@@ -49,21 +49,32 @@ impl ProofSystem {
         let mut builder = ModelCircuitBuilder::new();
         let (gates, domain_size, zk_rows) = builder.build_circuit(model);
 
-        // Calculate total number of public inputs
-        let num_public = model.graph.inputs.iter().map(|&idx| {
+        // Calculate total number of public inputs and outputs
+        let num_public_inputs = model.graph.inputs.iter().map(|&idx| {
             if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&idx] {
-                node.out_dims.iter().product()
+                node.out_dims.iter().product::<usize>()
             } else {
-                0
+                0usize
             }
-        }).sum();
+        }).sum::<usize>();
 
-        println!("Number of public inputs: {}", num_public);
+        let num_public_outputs = model.graph.outputs.iter().map(|&(node, _)| {
+            if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&node] {
+                node.out_dims.iter().product::<usize>()
+            } else {
+                0usize
+            }
+        }).sum::<usize>();
+
+        let total_public = num_public_inputs + num_public_outputs;
+
+        println!("Number of public inputs: {}", num_public_inputs);
+        println!("Number of public outputs: {}", num_public_outputs);
         println!("Required domain size: {}", domain_size);
 
         // Create constraint system with our domain size
         let cs = ConstraintSystem::create(gates)
-            .public(num_public) // Set public input size
+            .public(total_public) // Set public input size to include both inputs and outputs
             .max_poly_size(Some(domain_size)) // Set max poly size to match domain size
             .build()
             .expect("Failed to create constraint system");
@@ -101,15 +112,25 @@ impl ProofSystem {
     }
 
     /// Create witness for the circuit
-    fn create_witness(&self, inputs: &[Vec<f32>]) -> [Vec<Fp>; COLUMNS] {
+    fn create_witness(&self, inputs: &[Vec<f32>]) -> Result<[Vec<Fp>; COLUMNS], String> {
+        // First execute the model to get outputs
+        let outputs = self.model.graph.execute(inputs)
+            .map_err(|e| format!("Failed to execute model: {:?}", e))?;
+
         // Calculate initial witness size (without padding)
         let mut witness_size = 0;
         
-        // Add space for public inputs
+        // Convert inputs and outputs to field elements
         let public_inputs: Vec<Fp> = inputs.iter()
             .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x)))
             .collect();
-        witness_size += public_inputs.len();
+        
+        let public_outputs: Vec<Fp> = outputs.iter()
+            .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x)))
+            .collect();
+
+        // Total public values is inputs + outputs
+        witness_size += public_inputs.len() + public_outputs.len();
 
         // Add space for intermediate computations
         for node in self.model.graph.nodes.values() {
@@ -129,7 +150,8 @@ impl ProofSystem {
             }
         }
 
-        println!("Creating witness with {} public inputs", public_inputs.len());
+        println!("Creating witness with {} public inputs and {} public outputs", 
+            public_inputs.len(), public_outputs.len());
 
         // Ensure witness size is strictly less than domain_size - zk_rows
         assert!(witness_size < self.domain_size - self.zk_rows,
@@ -144,14 +166,21 @@ impl ProofSystem {
 
         // Place public inputs in witness
         for (i, &value) in public_inputs.iter().enumerate() {
-            // Set the value in all columns for public inputs
             for col in 0..COLUMNS {
                 witness[col][i] = value;
             }
         }
 
-        // Process each node in topological order starting after public inputs
-        let mut current_row = public_inputs.len();
+        // Place public outputs right after inputs
+        for (i, &value) in public_outputs.iter().enumerate() {
+            let pos = public_inputs.len() + i;
+            for col in 0..COLUMNS {
+                witness[col][pos] = value;
+            }
+        }
+
+        // Process each node in topological order starting after public values
+        let mut current_row = public_inputs.len() + public_outputs.len();
         let mut intermediate_values = std::collections::HashMap::new();
 
         for (idx, node) in &self.model.graph.nodes {
@@ -187,13 +216,12 @@ impl ProofSystem {
                             current_row += output_size;
                         }
                     },
-                    crate::graph::model::OperationType::Relu => {
-                        if let Some((input_idx, _)) = node.inputs.first() {
-                            if let Some(&input_row) = intermediate_values.get(input_idx) {
+                    crate::graph::model::OperationType::Add => {
+                        if let (Some((left_idx, _)), Some((right_idx, _))) = (node.inputs.get(0), node.inputs.get(1)) {
+                            if let (Some(&left_row), Some(&right_row)) = (intermediate_values.get(left_idx), intermediate_values.get(right_idx)) {
                                 let size = node.out_dims.iter().product();
                                 for i in 0..size {
-                                    let x = witness[0][input_row + i];
-                                    let result = if x == Fp::zero() { Fp::zero() } else { x };
+                                    let result = witness[0][left_row + i] + witness[0][right_row + i];
                                     // Set the result in all columns
                                     for col in 0..COLUMNS {
                                         witness[col][current_row + i] = result;
@@ -204,12 +232,13 @@ impl ProofSystem {
                             }
                         }
                     },
-                    crate::graph::model::OperationType::Add => {
-                        if let (Some((left_idx, _)), Some((right_idx, _))) = (node.inputs.get(0), node.inputs.get(1)) {
-                            if let (Some(&left_row), Some(&right_row)) = (intermediate_values.get(left_idx), intermediate_values.get(right_idx)) {
+                    crate::graph::model::OperationType::Relu | crate::graph::model::OperationType::Max => {
+                        if let Some((input_idx, _)) = node.inputs.first() {
+                            if let Some(&input_row) = intermediate_values.get(input_idx) {
                                 let size = node.out_dims.iter().product();
                                 for i in 0..size {
-                                    let result = witness[0][left_row + i] + witness[0][right_row + i];
+                                    let x = witness[0][input_row + i];
+                                    let result = if x == Fp::zero() { Fp::zero() } else { x };
                                     // Set the result in all columns
                                     for col in 0..COLUMNS {
                                         witness[col][current_row + i] = result;
@@ -240,7 +269,7 @@ impl ProofSystem {
             }
         }
 
-        witness
+        Ok(witness)
     }
 
     /// Create a proof for model execution
@@ -248,10 +277,10 @@ impl ProofSystem {
         &self,
         inputs: &[Vec<f32>],
     ) -> Result<ProverProof<Vesta, ZkOpeningProof>, String> {
-        // Create witness with public inputs properly placed
-        let witness = self.create_witness(inputs);
+        // Create witness with public inputs and outputs properly placed
+        let witness = self.create_witness(inputs)?;
 
-        // Convert inputs to public inputs
+        // Convert inputs to field elements
         let public_inputs: Vec<Fp> = inputs.iter()
             .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x)))
             .collect();
@@ -272,28 +301,35 @@ impl ProofSystem {
         ).map_err(|e| format!("Failed to create proof: {:?}", e))
     }
 
-    /// Verify a proof
+    /// Verify a proof with both inputs and expected outputs
     pub fn verify_proof(
         &self,
         proof: &ProverProof<Vesta, ZkOpeningProof>,
         inputs: &[Vec<f32>],
+        expected_outputs: &[Vec<f32>],
     ) -> Result<bool, String> {
-        // Convert inputs to public inputs
-        let public_inputs: Vec<Fp> = inputs.iter()
+        // Convert inputs and outputs to field elements
+        let mut public_values: Vec<Fp> = inputs.iter()
             .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x)))
             .collect();
 
-        println!("Verifying proof with {} public inputs", public_inputs.len());
+        // Append expected outputs to public values
+        let output_values: Vec<Fp> = expected_outputs.iter()
+            .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x)))
+            .collect();
+        public_values.extend(output_values);
+
+        println!("Verifying proof with {} public values", public_values.len());
 
         // Setup group map
         let group_map = <Vesta as CommitmentCurve>::Map::setup();
 
-        // Verify proof
+        // Verify proof with both inputs and outputs
         kimchi::verifier::verify::<Vesta, BaseSponge, ScalarSponge, ZkOpeningProof>(
             &group_map,
             &self.verifier_index,
             proof,
-            &public_inputs,
+            &public_values,
         ).map(|_| true)
         .map_err(|e| format!("Failed to verify proof: {:?}", e))
     }
@@ -332,11 +368,14 @@ mod tests {
             0.0, 0.0, 0.0, 0.0, 0.0   // Padding to reach size 10
         ]];
 
+        // Execute model to get expected output
+        let output = model.graph.execute(&input).expect("Failed to execute model");
+
         println!("Creating proof with input size: {}", input[0].len());
 
-        // Create and verify proof
+        // Create and verify proof with both input and output
         let proof = proof_system.create_proof(&input).expect("Failed to create proof");
-        let result = proof_system.verify_proof(&proof, &input).expect("Failed to verify proof");
+        let result = proof_system.verify_proof(&proof, &input, &output).expect("Failed to verify proof");
 
         assert!(result);
     }

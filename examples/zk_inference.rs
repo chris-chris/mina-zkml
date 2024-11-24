@@ -26,8 +26,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Creating proof system...");
     let proof_system = ProofSystem::new(&model);
 
-    // 3. Create sample input
-    let input = vec![vec![1.0, 0.5, -0.3, 0.8, -0.2]];
+    // 3. Create sample input (with proper padding to size 10)
+    let input = vec![vec![
+        1.0, 0.5, -0.3, 0.8, -0.2,  // Original values
+        0.0, 0.0, 0.0, 0.0, 0.0     // Padding to reach size 10
+    ]];
 
     // 4. Execute model normally
     println!("Executing model...");

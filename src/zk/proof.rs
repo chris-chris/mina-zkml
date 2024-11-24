@@ -38,6 +38,8 @@ pub struct ProofSystem {
     pub verifier_index: VerifierIndex<Vesta, ZkOpeningProof>,
     domain: EvaluationDomains<Fp>,
     model: Model,
+    domain_size: usize,
+    zk_rows: usize,
 }
 
 impl ProofSystem {
@@ -45,7 +47,7 @@ impl ProofSystem {
     pub fn new(model: &Model) -> Self {
         // Convert model to circuit gates
         let mut builder = ModelCircuitBuilder::new();
-        let gates = builder.build_circuit(model);
+        let (gates, domain_size, zk_rows) = builder.build_circuit(model);
 
         // Calculate total number of public inputs
         let num_public = model.graph.inputs.iter().map(|&idx| {
@@ -57,22 +59,20 @@ impl ProofSystem {
         }).sum();
 
         println!("Number of public inputs: {}", num_public);
+        println!("Required domain size: {}", domain_size);
 
-        // Create constraint system
+        // Create constraint system with our domain size
         let cs = ConstraintSystem::create(gates)
             .public(num_public) // Set public input size
+            .max_poly_size(Some(domain_size)) // Set max poly size to match domain size
             .build()
             .expect("Failed to create constraint system");
 
-        // Calculate minimum required domain size
-        let min_domain_size = Self::calculate_domain_size(model);
-        println!("Required domain size: {}", min_domain_size);
         println!("Constraint system domain size: {}", cs.domain.d1.size());
 
-        // Create SRS with the larger of the two sizes
-        let srs_size = std::cmp::max(min_domain_size, cs.domain.d1.size());
-        println!("Using SRS size: {}", srs_size);
-        let srs = SRS::<Vesta>::create(srs_size);
+        // Create SRS with our domain size
+        println!("Using SRS size: {}", domain_size);
+        let srs = SRS::<Vesta>::create(domain_size);
         let srs = Arc::new(srs);
 
         // Create prover index
@@ -86,21 +86,9 @@ impl ProofSystem {
             verifier_index,
             domain: cs.domain,
             model: model.clone(),
+            domain_size,
+            zk_rows,
         }
-    }
-
-    /// Calculate next power of 2
-    fn next_power_of_two(n: usize) -> usize {
-        let mut v = n;
-        v -= 1;
-        v |= v >> 1;
-        v |= v >> 2;
-        v |= v >> 4;
-        v |= v >> 8;
-        v |= v >> 16;
-        v |= v >> 32;
-        v += 1;
-        v
     }
 
     /// Convert f32 to field element
@@ -112,67 +100,47 @@ impl ProofSystem {
         }
     }
 
-    /// Calculate required domain size for the model
-    fn calculate_domain_size(model: &Model) -> usize {
-        let mut size: usize = 0;
+    /// Create witness for the circuit
+    fn create_witness(&self, inputs: &[Vec<f32>]) -> [Vec<Fp>; COLUMNS] {
+        // Calculate initial witness size (without padding)
+        let mut witness_size = 0;
         
-        // Add space for inputs
-        for &idx in &model.graph.inputs {
-            if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&idx] {
-                size += node.out_dims.iter().product::<usize>();
-            }
-        }
+        // Add space for public inputs
+        let public_inputs: Vec<Fp> = inputs.iter()
+            .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x)))
+            .collect();
+        witness_size += public_inputs.len();
 
-        // Add space for intermediate computations and outputs
-        for node in model.graph.nodes.values() {
+        // Add space for intermediate computations
+        for node in self.model.graph.nodes.values() {
             if let crate::graph::model::NodeType::Node(node) = node {
                 match node.op_type {
                     crate::graph::model::OperationType::MatMul => {
-                        let output_size = node.out_dims.iter().product::<usize>();
-                        size += output_size;
-                        // Add space for matrix multiplication intermediate values
-                        if let Some(weights) = &node.weights {
-                            size += weights.len();
-                        }
+                        witness_size += node.out_dims.iter().product::<usize>();
                     },
                     crate::graph::model::OperationType::Relu => {
-                        let output_size = node.out_dims.iter().product::<usize>();
-                        size += output_size;
-                        // Add space for comparison results
-                        size += output_size;
+                        witness_size += node.out_dims.iter().product::<usize>();
                     },
                     crate::graph::model::OperationType::Add => {
-                        let output_size = node.out_dims.iter().product::<usize>();
-                        size += output_size;
-                        // Add space for intermediate sums
-                        size += output_size;
+                        witness_size += node.out_dims.iter().product::<usize>();
                     },
                     _ => {}
                 }
             }
         }
 
-        // Add space for witness columns
-        size *= COLUMNS;
-
-        // Add space for zero-knowledge rows
-        size += 50;  // Match ZK_ROWS from wiring.rs
-
-        // Round up to next power of 2 and ensure minimum size of 256
-        std::cmp::max(256, Self::next_power_of_two(size))
-    }
-
-    /// Create witness for the circuit
-    fn create_witness(&self, inputs: &[Vec<f32>]) -> [Vec<Fp>; COLUMNS] {
-        let domain_size = self.domain.d1.size();
-        let mut witness = array::from_fn(|_| vec![Fp::zero(); domain_size]);
-        
-        // Convert inputs to field elements
-        let public_inputs: Vec<Fp> = inputs.iter()
-            .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x)))
-            .collect();
-
         println!("Creating witness with {} public inputs", public_inputs.len());
+
+        // Ensure witness size is strictly less than domain_size - zk_rows
+        assert!(witness_size < self.domain_size - self.zk_rows,
+            "Witness size {} must be strictly less than domain size {} minus zk_rows {}",
+            witness_size,
+            self.domain_size,
+            self.zk_rows
+        );
+
+        // Create witness arrays
+        let mut witness = array::from_fn(|_| vec![Fp::zero(); self.domain_size]);
 
         // Place public inputs in witness
         for (i, &value) in public_inputs.iter().enumerate() {
@@ -258,11 +226,17 @@ impl ProofSystem {
         }
 
         // Add random values for zero-knowledge rows at the end
-        let zk_rows = 50; // Match ZK_ROWS from wiring.rs
         let mut rng = thread_rng();
         for col in 0..COLUMNS {
-            for i in (domain_size - zk_rows)..domain_size {
+            for i in (self.domain_size - self.zk_rows)..self.domain_size {
                 witness[col][i] = <Fp as UniformRand>::rand(&mut rng);
+            }
+        }
+
+        // Pad remaining rows with zeros
+        for col in 0..COLUMNS {
+            for i in current_row..(self.domain_size - self.zk_rows) {
+                witness[col][i] = Fp::zero();
             }
         }
 

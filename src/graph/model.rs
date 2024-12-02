@@ -13,6 +13,9 @@ use tract_onnx::{prelude::*, tract_hir::ops::konst::Const, tract_hir::ops::scan:
 
 use crate::zk::operations::identify_tract_operation;
 
+/// Type alias for the graph loading result
+pub type GraphLoadResult = (Graph<TypedFact, Box<dyn TypedOp>>, SymbolValues);
+
 /// Represents a node output connection as (node_index, output_slot)
 pub type Outlet = (usize, usize);
 
@@ -349,18 +352,13 @@ impl ParsedNodes {
 
                 let mut output = vec![0.0; output_dim];
 
-                // PyTorch-style matrix multiplication
-                for i in 0..output_dim {
-                    // For each output element
-                    let mut sum = 0.0;
-                    for j in 0..input_dim {
-                        // For each input element
-                        // weights are stored in [output_dim, input_dim] format
-                        let weight_idx = i * input_dim + j; // Row-major indexing
-                        sum += input[j] * weights[weight_idx];
-                    }
-                    output[i] = sum;
-                }
+                // Using iterators instead of range loops
+                output.iter_mut().enumerate().for_each(|(i, out)| {
+                    *out = input.iter().enumerate().fold(0.0, |sum, (j, &input_val)| {
+                        let weight_idx = i * input_dim + j;
+                        sum + input_val * weights[weight_idx]
+                    });
+                });
 
                 Ok(vec![output])
             }
@@ -681,7 +679,7 @@ impl Model {
     pub fn load_onnx_using_tract<P: AsRef<Path>>(
         path: P,
         run_args: &RunArgs,
-    ) -> Result<(Graph<TypedFact, Box<dyn TypedOp>>, SymbolValues), GraphError> {
+    ) -> Result<GraphLoadResult, GraphError> {
         debug!("Starting load_onnx_using_tract");
         use tract_onnx::tract_hir::internal::GenericFactoid;
 
@@ -798,7 +796,7 @@ impl Model {
                             });
                         }
                         output_mappings.push(mappings);
-                    }
+    }
 
                     // Process subgraph
                     let subgraph_nodes = Self::nodes_from_graph(

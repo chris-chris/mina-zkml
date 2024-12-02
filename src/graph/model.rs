@@ -210,47 +210,6 @@ impl ParsedNodes {
         Ok(())
     }
 
-    fn log_tensor_values(
-        &self,
-        node_idx: usize,
-        op_type: &OperationType,
-        outputs: &[Vec<f32>],
-    ) -> Result<(), GraphError> {
-        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("tensor_log.txt")
-            .map_err(|_| GraphError::UnableToSaveModel)?;
-
-        // Write header with timestamp, node info
-        writeln!(file, "[{}] Node {}: {:?}", timestamp, node_idx, op_type)
-            .map_err(|_| GraphError::UnableToSaveModel)?;
-
-        // Write each output tensor on its own line
-        for (i, tensor) in outputs.iter().enumerate() {
-            // Write output number
-            write!(file, "Output {}: [", i).map_err(|_| GraphError::UnableToSaveModel)?;
-
-            // Write all values with consistent formatting
-            for (j, value) in tensor.iter().enumerate() {
-                if j > 0 {
-                    write!(file, ", ").map_err(|_| GraphError::UnableToSaveModel)?;
-                }
-                write!(file, "{:.6}", value).map_err(|_| GraphError::UnableToSaveModel)?;
-            }
-
-            // Close the array and add length info
-            writeln!(file, "] (length: {})", tensor.len())
-                .map_err(|_| GraphError::UnableToSaveModel)?;
-        }
-
-        // Add blank line between node outputs for readability
-        writeln!(file).map_err(|_| GraphError::UnableToSaveModel)?;
-
-        Ok(())
-    }
-
     /// Returns a vector of output scales for all output nodes
     pub fn get_output_scales(&self) -> Result<Vec<i32>, GraphError> {
         self.outputs

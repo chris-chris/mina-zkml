@@ -35,7 +35,6 @@ pub struct ProverOutput {
 pub struct ProofSystem {
     pub prover_index: ProverIndex<Vesta, ZkOpeningProof>,
     pub verifier_index: VerifierIndex<Vesta, ZkOpeningProof>,
-    domain: EvaluationDomains<Fp>,
     model: Model,
     domain_size: usize,
     zk_rows: usize,
@@ -104,7 +103,6 @@ impl ProofSystem {
         Self {
             prover_index,
             verifier_index,
-            domain: cs.domain,
             model: model.clone(),
             domain_size,
             zk_rows,
@@ -134,12 +132,6 @@ impl ProofSystem {
 
         // Calculate initial witness size (without padding)
         let mut witness_size = 0;
-
-        // Convert inputs and outputs to field elements
-        let public_inputs: Vec<Fp> = inputs
-            .iter()
-            .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x)))
-            .collect();
 
         let public_outputs: Vec<Fp> = outputs
             .iter()

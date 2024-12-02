@@ -85,7 +85,7 @@ impl ModelCircuitBuilder {
         };
 
         // Calculate number of chunks and required zk_rows
-        let num_chunks = (domain_size + MIN_DOMAIN_SIZE - 1) / MIN_DOMAIN_SIZE;
+        let num_chunks = domain_size.div_ceil(MIN_DOMAIN_SIZE);
         let min_zk_rows = Self::zk_rows_strict_lower_bound(num_chunks) + 1;
         let zk_rows = std::cmp::max(min_zk_rows, (16 * num_chunks + 5) / 7);
 

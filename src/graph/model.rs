@@ -682,12 +682,18 @@ impl Model {
     ) -> Result<GraphLoadResult, GraphError> {
         debug!("Starting load_onnx_using_tract");
         use tract_onnx::tract_hir::internal::GenericFactoid;
-
-        let mut reader = std::fs::File::open(path).map_err(|_| GraphError::UnableToReadModel)?;
+        let mut reader = std::fs::File::open(path).map_err(|err| {
+            GraphError::UnableToReadModel(format!("Failed to read a file: {:?}", err))
+        })?;
 
         let mut model = match tract_onnx::onnx().model_for_read(&mut reader) {
             Ok(model) => model,
-            Err(_) => return Err(GraphError::UnableToReadModel),
+            Err(err) => {
+                return Err(GraphError::UnableToReadModel(format!(
+                    "Failed to load a model: {:?}",
+                    err
+                )))
+            }
         };
 
         let variables: std::collections::HashMap<String, usize> =
@@ -708,15 +714,20 @@ impl Model {
                 }
             }
 
-            model
-                .set_input_fact(i, fact)
-                .map_err(|_| GraphError::UnableToReadModel)?;
+            model.set_input_fact(i, fact).map_err(|err| {
+                GraphError::UnableToReadModel(format!("Failed to set input fact: {:?}", err))
+            })?;
         }
 
         for (i, _) in model.clone().outputs.iter().enumerate() {
             match model.set_output_fact(i, InferenceFact::default()) {
                 Ok(_) => (),
-                Err(_) => return Err(GraphError::UnableToReadModel),
+                Err(err) => {
+                    return Err(GraphError::UnableToReadModel(format!(
+                        "Failed to set output fact: {}",
+                        err
+                    )))
+                }
             }
         }
 
@@ -729,16 +740,42 @@ impl Model {
 
         let typed_model = model
             .into_typed()
-            .map_err(|_| GraphError::UnableToReadModel)?
+            .map_err(|err| {
+                GraphError::UnableToReadModel(format!("Failed to analyze and convert: {}", err))
+            })?
             .concretize_dims(&symbol_values)
-            .map_err(|_| GraphError::UnableToReadModel)?
+            .map_err(|err| {
+                GraphError::UnableToReadModel(format!("Failed to concretize dims: {}", err))
+            })?
             .into_decluttered()
-            .map_err(|_| GraphError::UnableToReadModel)?;
+            .map_err(|err| {
+                GraphError::UnableToReadModel(format!("Failed to declutter: {}", err))
+            })?;
 
         debug!("Completed load_onnx_using_tract successfully");
         Ok((typed_model, symbol_values))
     }
 
+    /// Saves the model to a binary file
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
+        let encoded: Vec<u8> =
+            bincode::serialize(self).map_err(|_| GraphError::UnableToSaveModel)?;
+        std::fs::write(path, encoded).map_err(|_| GraphError::UnableToSaveModel)
+    }
+
+    /// Loads a model from a binary file
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, GraphError> {
+        let bytes = std::fs::read(path).map_err(|err| {
+            GraphError::UnableToReadModel(format!(
+                "Failed to read a model from a binary file: {}",
+                err
+            ))
+        })?;
+        bincode::deserialize(&bytes)
+            .map_err(|err| GraphError::UnableToReadModel(format!("Failed to deserialize: {}", err)))
+    }
+
+    /// Converts a tract graph into the internal node representation
     pub fn nodes_from_graph(
         graph: &Graph<TypedFact, Box<dyn TypedOp>>,
         visibility: VarVisibility,

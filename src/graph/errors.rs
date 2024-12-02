@@ -3,7 +3,7 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, Copy, PartialEq)]
 pub enum GraphError {
     #[error("Unable to read model")]
-    UnableToReadModel,
+    UnableToReadModel(String),
     #[error("Unable to save model")]
     UnableToSaveModel,
     #[error("Missing batch size")]

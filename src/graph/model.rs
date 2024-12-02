@@ -1,18 +1,17 @@
 use super::errors::GraphError;
+use chrono::Local;
 use instant;
 use log::debug;
 use serde::{Deserialize, Serialize};
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
 };
-use std::fs::OpenOptions;
-use std::io::Write;
-use chrono::Local;
-use tract_onnx::{prelude::*, tract_hir::ops::scan::Scan, tract_hir::ops::konst::Const};
+use tract_onnx::{prelude::*, tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
 use crate::zk::operations::identify_tract_operation;
-
 
 /// Represents a node output connection as (node_index, output_slot)
 pub type Outlet = (usize, usize);
@@ -105,10 +104,10 @@ impl ParsedNodes {
             .map_err(|_| GraphError::UnableToSaveModel)?;
 
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-        
+
         writeln!(file, "\n[{}] Weights and Biases Analysis", timestamp)
             .map_err(|_| GraphError::UnableToSaveModel)?;
-        
+
         writeln!(file, "----------------------------------------")
             .map_err(|_| GraphError::UnableToSaveModel)?;
 
@@ -139,11 +138,11 @@ impl ParsedNodes {
                     // Node header
                     writeln!(file, "\nConst Node {}", node_idx)
                         .map_err(|_| GraphError::UnableToSaveModel)?;
-                    
+
                     // Dimensions
                     writeln!(file, "Dimensions: {:?}", node.out_dims)
                         .map_err(|_| GraphError::UnableToSaveModel)?;
-                    
+
                     // Consumers
                     if let Some(consumers) = const_connections.get(&node_idx) {
                         writeln!(file, "Used by:").map_err(|_| GraphError::UnableToSaveModel)?;
@@ -155,7 +154,8 @@ impl ParsedNodes {
 
                     // Values
                     if let Some(weights) = &node.weights {
-                        writeln!(file, "\nAll Values:").map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(file, "\nAll Values:")
+                            .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "Total elements: {}", weights.len())
                             .map_err(|_| GraphError::UnableToSaveModel)?;
 
@@ -169,28 +169,30 @@ impl ParsedNodes {
                                 .map_err(|_| GraphError::UnableToSaveModel)?;
                         }
                         writeln!(file, "]").map_err(|_| GraphError::UnableToSaveModel)?;
-                        
+
                         // Statistics
                         let min = weights.iter().fold(f32::INFINITY, |a, &b| a.min(b));
                         let max = weights.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
                         let sum: f32 = weights.iter().sum();
                         let mean = sum / weights.len() as f32;
-                        
+
                         // Count non-zero elements
-                        let non_zero_count = weights.iter()
-                            .filter(|&&x| x != 0.0)
-                            .count();
-                        
-                        writeln!(file, "\nStatistics:").map_err(|_| GraphError::UnableToSaveModel)?;
+                        let non_zero_count = weights.iter().filter(|&&x| x != 0.0).count();
+
+                        writeln!(file, "\nStatistics:")
+                            .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "  Total elements: {}", weights.len())
                             .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "  Non-zero elements: {}", non_zero_count)
                             .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "  Zero elements: {}", weights.len() - non_zero_count)
                             .map_err(|_| GraphError::UnableToSaveModel)?;
-                        writeln!(file, "  Sparsity: {:.2}%", 
-                            (weights.len() - non_zero_count) as f32 / weights.len() as f32 * 100.0)
-                            .map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(
+                            file,
+                            "  Sparsity: {:.2}%",
+                            (weights.len() - non_zero_count) as f32 / weights.len() as f32 * 100.0
+                        )
+                        .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "  Min: {:.6}", min)
                             .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "  Max: {:.6}", max)
@@ -208,7 +210,12 @@ impl ParsedNodes {
         Ok(())
     }
 
-    fn log_tensor_values(&self, node_idx: usize, op_type: &OperationType, outputs: &[Vec<f32>]) -> Result<(), GraphError> {
+    fn log_tensor_values(
+        &self,
+        node_idx: usize,
+        op_type: &OperationType,
+        outputs: &[Vec<f32>],
+    ) -> Result<(), GraphError> {
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
         let mut file = OpenOptions::new()
             .create(true)
@@ -217,17 +224,14 @@ impl ParsedNodes {
             .map_err(|_| GraphError::UnableToSaveModel)?;
 
         // Write header with timestamp, node info
-        writeln!(
-            file,
-            "[{}] Node {}: {:?}",
-            timestamp, node_idx, op_type
-        ).map_err(|_| GraphError::UnableToSaveModel)?;
+        writeln!(file, "[{}] Node {}: {:?}", timestamp, node_idx, op_type)
+            .map_err(|_| GraphError::UnableToSaveModel)?;
 
         // Write each output tensor on its own line
         for (i, tensor) in outputs.iter().enumerate() {
             // Write output number
             write!(file, "Output {}: [", i).map_err(|_| GraphError::UnableToSaveModel)?;
-            
+
             // Write all values with consistent formatting
             for (j, value) in tensor.iter().enumerate() {
                 if j > 0 {
@@ -235,17 +239,17 @@ impl ParsedNodes {
                 }
                 write!(file, "{:.6}", value).map_err(|_| GraphError::UnableToSaveModel)?;
             }
-            
+
             // Close the array and add length info
-            writeln!(file, "] (length: {})", tensor.len()).map_err(|_| GraphError::UnableToSaveModel)?;
+            writeln!(file, "] (length: {})", tensor.len())
+                .map_err(|_| GraphError::UnableToSaveModel)?;
         }
-        
+
         // Add blank line between node outputs for readability
         writeln!(file).map_err(|_| GraphError::UnableToSaveModel)?;
 
         Ok(())
     }
-
 
     /// Returns a vector of output scales for all output nodes
     pub fn get_output_scales(&self) -> Result<Vec<i32>, GraphError> {
@@ -357,7 +361,6 @@ impl ParsedNodes {
                 if let Some(weights) = &node.weights {
                     Ok(vec![weights.clone()])
                 } else {
-                    println!("No weights found for Const node");
                     Err(GraphError::InvalidInputShape)
                 }
             },
@@ -365,7 +368,7 @@ impl ParsedNodes {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInputShape);
                 }
-            
+
                 let input = &inputs[0];  // Shape: [784]
                 let weights = if inputs.len() > 1 {
                     &inputs[1]
@@ -384,7 +387,7 @@ impl ParsedNodes {
                 if weights.len() != weight_rows * weight_cols {
                     return Err(GraphError::InvalidInputShape);
                 }
-            
+
                 let mut output = vec![0.0; output_dim];
                 
                 // PyTorch-style matrix multiplication
@@ -409,7 +412,7 @@ impl ParsedNodes {
                 } else {
                     return Err(GraphError::InvalidInputShape);
                 };
-                
+
                 if a.len() != b.len() {
                     return Err(GraphError::InvalidInputShape);
                 }
@@ -452,14 +455,14 @@ impl ParsedNodes {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInputShape);
                 }
-                
+
                 let expected_size: usize = node.out_dims.iter().product();
                 let input = &inputs[0];
                 
                 if input.len() != expected_size {
                     return Err(GraphError::InvalidInputShape);
                 }
-                
+
                 Ok(vec![input.clone()])
             },
             OperationType::Reshape => {
@@ -581,17 +584,22 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
                 } else {
                     (None, None)
                 }
-            },
-            _ => (None, None)
+            }
+            _ => (None, None),
         };
-
 
         SerializableNode {
             inputs: node.inputs.iter().map(|o| (o.node, o.slot)).collect(),
-            out_dims: node.outputs[0].fact.shape.iter()
+            out_dims: node.outputs[0]
+                .fact
+                .shape
+                .iter()
                 .map(|d| d.to_i64().unwrap() as usize)
                 .collect(),
-            out_scale: node.outputs[0].fact.konst.as_ref()
+            out_scale: node.outputs[0]
+                .fact
+                .konst
+                .as_ref()
                 .map_or(1, |k| *k.to_scalar::<i32>().unwrap_or(&1)),
             id: node.id,
             op_type,
@@ -689,18 +697,17 @@ impl Model {
         println!("Model loaded in {:?}", start.elapsed());
 
         // Collect all input nodes (nodes with OperationType::Input)
-        let inputs: Vec<usize> = nodes.iter()
-            .filter_map(|(idx, node)| {
-                match node {
-                    NodeType::Node(n) => {
-                        if matches!(n.op_type, OperationType::Input) {
-                            Some(*idx)
-                        } else {
-                            None
-                        }
+        let inputs: Vec<usize> = nodes
+            .iter()
+            .filter_map(|(idx, node)| match node {
+                NodeType::Node(n) => {
+                    if matches!(n.op_type, OperationType::Input) {
+                        Some(*idx)
+                    } else {
+                        None
                     }
-                    _ => None
                 }
+                _ => None,
             })
             .collect();
 
@@ -869,7 +876,7 @@ impl Model {
                 }
                 None => {
                     debug!("Processing regular node {}", idx);
-                    
+
                     // Create the node with proper operation type and weights/biases
                     let serializable_node = SerializableNode::from(node);
                     nodes.insert(idx, NodeType::Node(serializable_node));

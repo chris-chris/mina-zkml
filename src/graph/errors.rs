@@ -23,4 +23,6 @@ pub enum GraphError {
     UnsupportedOperation,
     #[error("Invalid Output Shape")]
     InvalidOutputShape,
+    #[error("Invalid parameter")]
+    InvalidParams
 }

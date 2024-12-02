@@ -32,24 +32,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         0.0, 0.0, 0.0, 0.0, 0.0     // Padding to reach size 10
     ]];
 
-    // 4. Execute model normally to get expected output
-    println!("Executing model...");
-    let output = model.graph.execute(&input)?;
-    println!("Model output: {:?}", output);
+    // 4. Generate output and proof
+    println!("Generating output and proof...");
+    let prover_output = proof_system.prove(&input)?;
+    println!("Model output: {:?}", prover_output.output);
 
-    // 5. Create zero-knowledge proof
-    println!("Creating proof...");
-    let proof = proof_system.create_proof(&input)?;
-
-    // 6. Verify the proof with both input and expected output
+    // 5. Verify the proof with output and proof
     println!("Verifying proof...");
-    let is_valid = proof_system.verify_proof(&proof, &input, &output)?;
+    let is_valid = proof_system.verify(&prover_output.output, &prover_output.proof)?;
 
     println!("\nResults:");
     println!("Model execution successful: ✓");
     println!("Proof creation successful: ✓");
     println!("Proof verification: {}", if is_valid { "✓ Valid" } else { "✗ Invalid" });
-    println!("Expected output verified: ✓");
+
+    // 6. Demonstrate invalid verification with modified output
+    println!("\nTesting invalid case with modified output...");
+    let mut modified_output = prover_output.output.clone();
+    modified_output[0][0] += 1.0; // Modify first output value
+
+    let is_valid_modified = proof_system.verify(&modified_output, &prover_output.proof)?;
+    println!("Modified output verification: {}", if !is_valid_modified { "✗ Invalid (Expected)" } else { "✓ Valid (Unexpected!)" });
 
     Ok(())
 }

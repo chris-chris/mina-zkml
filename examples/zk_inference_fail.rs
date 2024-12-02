@@ -32,30 +32,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         0.0, 0.0, 0.0, 0.0, 0.0     // Padding to reach size 10
     ]];
 
-    // 4. Execute model normally to get actual output
-    println!("Executing model...");
-    let actual_output = model.graph.execute(&input)?;
-    println!("Actual model output: {:?}", actual_output);
+    // 4. Generate output and proof
+    println!("Generating output and proof...");
+    let prover_output = proof_system.prove(&input)?;
+    println!("Model output: {:?}", prover_output.output);
 
-    // 5. Create zero-knowledge proof
-    println!("Creating proof...");
-    let proof = proof_system.create_proof(&input)?;
+    // 5. Create modified output (simulating malicious behavior)
+    let mut modified_output = prover_output.output.clone();
+    modified_output[0][0] += 1.0; // Modify first output value
 
-    // 6. Create incorrect output (random values)
-    let incorrect_output = vec![vec![0.5, 0.7, 0.9]];  // Random values different from actual output
-    println!("Incorrect output to verify against: {:?}", incorrect_output);
-
-    // 7. Try to verify the proof with incorrect output
-    println!("Attempting to verify proof with incorrect output...");
-    let is_valid = proof_system.verify_proof(&proof, &input, &incorrect_output)?;
+    // 6. Try to verify with modified output (should fail)
+    println!("Verifying proof with modified output...");
+    let is_valid = proof_system.verify(&modified_output, &prover_output.proof)?;
 
     println!("\nResults:");
     println!("Model execution successful: ✓");
     println!("Proof creation successful: ✓");
-    println!("Proof verification: {}", if is_valid { "✓ Valid (UNEXPECTED!)" } else { "✗ Invalid (Expected)" });
-    println!("Actual output: {:?}", actual_output);
-    println!("Incorrect output used: {:?}", incorrect_output);
-    println!("\nVerification failed as expected because the provided output doesn't match the actual model computation.");
+    println!("Modified output verification: {}", if !is_valid { "✗ Invalid (Expected)" } else { "✓ Valid (Unexpected!)" });
 
     Ok(())
 }

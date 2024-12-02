@@ -97,31 +97,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load first image
     let input1 = preprocess_image("models/data/1052.png")?;
     let input_vec1 = vec![input1];
-    let output1 = model.graph.execute(&input_vec1)?;
+    
+    // Generate output and proof for first image
+    let prover_output1 = proof_system.prove(&input_vec1)?;
     println!("First image prediction:");
-    print_prediction_info(&output1[0]);
+    print_prediction_info(&prover_output1.output[0]);
 
-    // Create and verify proof for first image
-    let proof1 = proof_system.create_proof(&input_vec1)?;
-    let is_valid1 = proof_system.verify_proof(&proof1, &input_vec1, &output1)?;
+    // Verify proof for first image
+    let is_valid1 = proof_system.verify(&prover_output1.output, &prover_output1.proof)?;
     println!("Verification result: {}", if is_valid1 { "✓ Valid" } else { "✗ Invalid" });
 
     println!("\n=== Test Case 2: Valid Proof for Second Image ===");
     // Load second image
     let input2 = preprocess_image("models/data/1085.png")?;
     let input_vec2 = vec![input2];
-    let output2 = model.graph.execute(&input_vec2)?;
+    
+    // Generate output and proof for second image
+    let prover_output2 = proof_system.prove(&input_vec2)?;
     println!("Second image prediction:");
-    print_prediction_info(&output2[0]);
+    print_prediction_info(&prover_output2.output[0]);
 
-    // Create and verify proof for second image
-    let proof2 = proof_system.create_proof(&input_vec2)?;
-    let is_valid2 = proof_system.verify_proof(&proof2, &input_vec2, &output2)?;
+    // Verify proof for second image
+    let is_valid2 = proof_system.verify(&prover_output2.output, &prover_output2.proof)?;
     println!("Verification result: {}", if is_valid2 { "✓ Valid" } else { "✗ Invalid" });
 
     println!("\n=== Test Case 3: Invalid Proof - Completely Wrong Outputs ===");
     // Create fake output with opposite predictions
-    let mut fake_output1 = output1.clone();
+    let mut fake_output1 = prover_output1.output.clone();
     for i in 0..10 {
         fake_output1[0][i] = -fake_output1[0][i]; // Invert all logits
     }
@@ -129,12 +131,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_prediction_info(&fake_output1[0]);
 
     // Try to verify with wrong outputs
-    let is_valid3 = proof_system.verify_proof(&proof1, &input_vec1, &fake_output1)?;
+    let is_valid3 = proof_system.verify(&fake_output1, &prover_output1.proof)?;
     println!("Verification result: {}", if is_valid3 { "✓ Valid (UNEXPECTED!)" } else { "✗ Invalid (Expected)" });
 
     println!("\n=== Test Case 4: Invalid Proof - Slightly Modified Outputs ===");
     // Create fake output with small perturbations
-    let mut fake_output2 = output2.clone();
+    let mut fake_output2 = prover_output2.output.clone();
     for i in 0..10 {
         fake_output2[0][i] += 0.1; // Add small perturbation to each logit
     }
@@ -142,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_prediction_info(&fake_output2[0]);
 
     // Try to verify with slightly modified outputs
-    let is_valid4 = proof_system.verify_proof(&proof2, &input_vec2, &fake_output2)?;
+    let is_valid4 = proof_system.verify(&fake_output2, &prover_output2.proof)?;
     println!("Verification result: {}", if is_valid4 { "✓ Valid (UNEXPECTED!)" } else { "✗ Invalid (Expected)" });
 
     println!("\n=== Summary ===");

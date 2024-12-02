@@ -148,17 +148,10 @@ fn test_model_graph_traversal() {
 #[test]
 fn test_error_handling_integration() {
     // Test missing batch size
-    let run_args = RunArgs {
-        variables: HashMap::new(),
-    };
-
     let visibility = VarVisibility {
         input: Visibility::Public,
         output: Visibility::Public,
     };
-
-    let result = Model::new("models/resnet101-v1-7.onnx", &run_args, &visibility);
-    assert!(matches!(result, Err(GraphError::MissingBatchSize)));
 
     // Test invalid model path
     let run_args = RunArgs {

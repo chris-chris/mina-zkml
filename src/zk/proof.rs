@@ -32,6 +32,13 @@ type SpongeParams = PlonkSpongeConstantsKimchi;
 type BaseSponge = DefaultFqSponge<VestaParameters, SpongeParams>;
 type ScalarSponge = DefaultFrSponge<Fp, SpongeParams>;
 
+/// Result type containing model output and its proof
+#[derive(Clone)]
+pub struct ProverOutput {
+    pub output: Vec<Vec<f32>>,
+    pub proof: ProverProof<Vesta, ZkOpeningProof>,
+}
+
 /// Creates prover and verifier indices for a model
 pub struct ProofSystem {
     pub prover_index: ProverIndex<Vesta, ZkOpeningProof>,
@@ -66,7 +73,7 @@ impl ProofSystem {
             }
         }).sum::<usize>();
 
-        let total_public = num_public_inputs + num_public_outputs;
+        let total_public = num_public_outputs; // Only outputs are public
 
         println!("Number of public inputs: {}", num_public_inputs);
         println!("Number of public outputs: {}", num_public_outputs);
@@ -74,8 +81,8 @@ impl ProofSystem {
 
         // Create constraint system with our domain size
         let cs = ConstraintSystem::create(gates)
-            .public(total_public) // Set public input size to include both inputs and outputs
-            .max_poly_size(Some(domain_size)) // Set max poly size to match domain size
+            .public(total_public) // Only outputs are public
+            .max_poly_size(Some(domain_size))
             .build()
             .expect("Failed to create constraint system");
 
@@ -112,7 +119,7 @@ impl ProofSystem {
     }
 
     /// Create witness for the circuit
-    fn create_witness(&self, inputs: &[Vec<f32>]) -> Result<[Vec<Fp>; COLUMNS], String> {
+    fn create_witness(&self, inputs: &[Vec<f32>]) -> Result<([Vec<Fp>; COLUMNS], Vec<Vec<f32>>), String> {
         // First execute the model to get outputs
         let outputs = self.model.graph.execute(inputs)
             .map_err(|e| format!("Failed to execute model: {:?}", e))?;
@@ -129,8 +136,8 @@ impl ProofSystem {
             .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x)))
             .collect();
 
-        // Total public values is inputs + outputs
-        witness_size += public_inputs.len() + public_outputs.len();
+        // Total public values is outputs only
+        witness_size += public_outputs.len();
 
         // Add space for intermediate computations
         for node in self.model.graph.nodes.values() {
@@ -150,9 +157,6 @@ impl ProofSystem {
             }
         }
 
-        println!("Creating witness with {} public inputs and {} public outputs", 
-            public_inputs.len(), public_outputs.len());
-
         // Ensure witness size is strictly less than domain_size - zk_rows
         assert!(witness_size < self.domain_size - self.zk_rows,
             "Witness size {} must be strictly less than domain size {} minus zk_rows {}",
@@ -164,23 +168,15 @@ impl ProofSystem {
         // Create witness arrays
         let mut witness = array::from_fn(|_| vec![Fp::zero(); self.domain_size]);
 
-        // Place public inputs in witness
-        for (i, &value) in public_inputs.iter().enumerate() {
+        // Place public outputs at the start
+        for (i, &value) in public_outputs.iter().enumerate() {
             for col in 0..COLUMNS {
                 witness[col][i] = value;
             }
         }
 
-        // Place public outputs right after inputs
-        for (i, &value) in public_outputs.iter().enumerate() {
-            let pos = public_inputs.len() + i;
-            for col in 0..COLUMNS {
-                witness[col][pos] = value;
-            }
-        }
-
         // Process each node in topological order starting after public values
-        let mut current_row = public_inputs.len() + public_outputs.len();
+        let mut current_row = public_outputs.len();
         let mut intermediate_values = std::collections::HashMap::new();
 
         for (idx, node) in &self.model.graph.nodes {
@@ -269,62 +265,53 @@ impl ProofSystem {
             }
         }
 
-        Ok(witness)
+        Ok((witness, outputs))
     }
 
-    /// Create a proof for model execution
-    pub fn create_proof(
+    /// Generate model output and create a proof
+    pub fn prove(
         &self,
         inputs: &[Vec<f32>],
-    ) -> Result<ProverProof<Vesta, ZkOpeningProof>, String> {
-        // Create witness with public inputs and outputs properly placed
-        let witness = self.create_witness(inputs)?;
-
-        // Convert inputs to field elements
-        let public_inputs: Vec<Fp> = inputs.iter()
-            .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x)))
-            .collect();
-
-        println!("Creating proof with {} public inputs", public_inputs.len());
+    ) -> Result<ProverOutput, String> {
+        // Create witness and get outputs
+        let (witness, outputs) = self.create_witness(inputs)?;
 
         // Setup group map
         let group_map = <Vesta as CommitmentCurve>::Map::setup();
 
-        // Create proof with low-level API
+        // Create proof
         let mut rng = thread_rng();
-        ProverProof::create::<BaseSponge, ScalarSponge, ThreadRng>(
+        let proof = ProverProof::create::<BaseSponge, ScalarSponge, ThreadRng>(
             &group_map,
             witness,
-            &[],  // No runtime tables
+            &[],
             &self.prover_index,
             &mut rng,
-        ).map_err(|e| format!("Failed to create proof: {:?}", e))
+        ).map_err(|e| format!("Failed to create proof: {:?}", e))?;
+
+        Ok(ProverOutput {
+            output: outputs,
+            proof,
+        })
     }
 
-    /// Verify a proof with both inputs and expected outputs
-    pub fn verify_proof(
+    /// Verify a proof given output and proof
+    pub fn verify(
         &self,
+        output: &[Vec<f32>],
         proof: &ProverProof<Vesta, ZkOpeningProof>,
-        inputs: &[Vec<f32>],
-        expected_outputs: &[Vec<f32>],
     ) -> Result<bool, String> {
-        // Convert inputs and outputs to field elements
-        let mut public_values: Vec<Fp> = inputs.iter()
-            .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x)))
-            .collect();
-
-        // Append expected outputs to public values
-        let output_values: Vec<Fp> = expected_outputs.iter()
+        // Convert output to field elements
+        let public_values: Vec<Fp> = output.iter()
             .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x)))
             .collect();
-        public_values.extend(output_values);
 
-        println!("Verifying proof with {} public values", public_values.len());
+        println!("Verifying proof with {} output values", public_values.len());
 
         // Setup group map
         let group_map = <Vesta as CommitmentCurve>::Map::setup();
 
-        // Verify proof with both inputs and outputs
+        // Verify proof with outputs only
         kimchi::verifier::verify::<Vesta, BaseSponge, ScalarSponge, ZkOpeningProof>(
             &group_map,
             &self.verifier_index,
@@ -364,18 +351,16 @@ mod tests {
 
         // Create sample input - pad to match expected size [1, 10]
         let input = vec![vec![
-            1.0, 0.5, 0.3, 0.8, 0.2,  // Original values
-            0.0, 0.0, 0.0, 0.0, 0.0   // Padding to reach size 10
+            1.0, 0.5, -0.3, 0.8, -0.2,  // Original values
+            0.0, 0.0, 0.0, 0.0, 0.0     // Padding to reach size 10
         ]];
 
-        // Execute model to get expected output
-        let output = model.graph.execute(&input).expect("Failed to execute model");
-
-        println!("Creating proof with input size: {}", input[0].len());
-
-        // Create and verify proof with both input and output
-        let proof = proof_system.create_proof(&input).expect("Failed to create proof");
-        let result = proof_system.verify_proof(&proof, &input, &output).expect("Failed to verify proof");
+        // Generate output and proof
+        let prover_output = proof_system.prove(&input).expect("Failed to create proof");
+        
+        // Verify the proof with just output and proof
+        let result = proof_system.verify(&prover_output.output, &prover_output.proof)
+            .expect("Failed to verify proof");
 
         assert!(result);
     }

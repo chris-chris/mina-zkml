@@ -40,6 +40,8 @@ pub struct ProofSystem {
     zk_rows: usize,
 }
 
+type WitnessOutput = ([Vec<Fp>; COLUMNS], Vec<Vec<f32>>);
+
 impl ProofSystem {
     /// Create a new proof system from a model
     pub fn new(model: &Model) -> Self {
@@ -119,10 +121,7 @@ impl ProofSystem {
     }
 
     /// Create witness for the circuit
-    fn create_witness(
-        &self,
-        inputs: &[Vec<f32>],
-    ) -> Result<([Vec<Fp>; COLUMNS], Vec<Vec<f32>>), String> {
+    fn create_witness(&self, inputs: &[Vec<f32>]) -> Result<WitnessOutput, String> {
         // First execute the model to get outputs
         let outputs = self
             .model
@@ -173,8 +172,8 @@ impl ProofSystem {
 
         // Place public outputs at the start
         for (i, &value) in public_outputs.iter().enumerate() {
-            for col in 0..COLUMNS {
-                witness[col][i] = value;
+            for item in witness.iter_mut().take(COLUMNS) {
+                item[i] = value;
             }
         }
 
@@ -208,8 +207,8 @@ impl ProofSystem {
                                     sum += weight * input_values[j];
                                 }
                                 // Set the result in all columns
-                                for col in 0..COLUMNS {
-                                    witness[col][current_row + i] = sum;
+                                for item in witness.iter_mut().take(COLUMNS) {
+                                    item[current_row + i] = sum;
                                 }
                             }
                             intermediate_values.insert(*idx, current_row);
@@ -229,8 +228,8 @@ impl ProofSystem {
                                     let result =
                                         witness[0][left_row + i] + witness[0][right_row + i];
                                     // Set the result in all columns
-                                    for col in 0..COLUMNS {
-                                        witness[col][current_row + i] = result;
+                                    for item in witness.iter_mut().take(COLUMNS) {
+                                        item[current_row + i] = result;
                                     }
                                 }
                                 intermediate_values.insert(*idx, current_row);
@@ -247,8 +246,8 @@ impl ProofSystem {
                                     let x = witness[0][input_row + i];
                                     let result = if x == Fp::zero() { Fp::zero() } else { x };
                                     // Set the result in all columns
-                                    for col in 0..COLUMNS {
-                                        witness[col][current_row + i] = result;
+                                    for item in witness.iter_mut().take(COLUMNS) {
+                                        item[current_row + i] = result;
                                     }
                                 }
                                 intermediate_values.insert(*idx, current_row);
@@ -263,16 +262,24 @@ impl ProofSystem {
 
         // Add random values for zero-knowledge rows at the end
         let mut rng = thread_rng();
-        for col in 0..COLUMNS {
-            for i in (self.domain_size - self.zk_rows)..self.domain_size {
-                witness[col][i] = <Fp as UniformRand>::rand(&mut rng);
+        for item in witness.iter_mut().take(COLUMNS) {
+            for i in item
+                .iter_mut()
+                .take(self.domain_size)
+                .skip(self.domain_size - self.zk_rows)
+            {
+                *i = <Fp as UniformRand>::rand(&mut rng);
             }
         }
 
         // Pad remaining rows with zeros
-        for col in 0..COLUMNS {
-            for i in current_row..(self.domain_size - self.zk_rows) {
-                witness[col][i] = Fp::zero();
+        for item in witness.iter_mut().take(COLUMNS) {
+            for i in item
+                .iter_mut()
+                .take(self.domain_size - self.zk_rows)
+                .skip(current_row)
+            {
+                *i = Fp::zero();
             }
         }
 

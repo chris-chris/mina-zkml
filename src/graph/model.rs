@@ -796,7 +796,7 @@ impl Model {
                             });
                         }
                         output_mappings.push(mappings);
-    }
+                    }
 
                     // Process subgraph
                     let subgraph_nodes = Self::nodes_from_graph(

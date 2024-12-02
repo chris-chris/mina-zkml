@@ -133,7 +133,7 @@ impl ParsedNodes {
         node_indices.sort();
 
         for &node_idx in &node_indices {
-            if let Some(NodeType::Node(node)) = self.nodes.get(&node_idx) {
+            if let Some(NodeType::Node(node)) = self.nodes.get(node_idx) {
                 if matches!(node.op_type, OperationType::Const) {
                     // Node header
                     writeln!(file, "\nConst Node {}", node_idx)
@@ -144,7 +144,7 @@ impl ParsedNodes {
                         .map_err(|_| GraphError::UnableToSaveModel)?;
 
                     // Consumers
-                    if let Some(consumers) = const_connections.get(&node_idx) {
+                    if let Some(consumers) = const_connections.get(node_idx) {
                         writeln!(file, "Used by:").map_err(|_| GraphError::UnableToSaveModel)?;
                         for (consumer_idx, op_type) in consumers {
                             writeln!(file, "  - Node {} ({:?})", consumer_idx, op_type)

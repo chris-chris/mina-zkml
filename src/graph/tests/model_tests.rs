@@ -1,11 +1,10 @@
-use super::*;
 use crate::graph::{
     errors::GraphError,
     model::{
         Model, NodeType, OperationType, ParsedNodes, SerializableNode, VarVisibility, Visibility,
     },
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap};
 
 #[test]
 fn test_matmul_operation() {

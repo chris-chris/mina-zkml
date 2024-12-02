@@ -226,7 +226,7 @@ impl ProofSystem {
                     }
                     crate::graph::model::OperationType::Add => {
                         if let (Some((left_idx, _)), Some((right_idx, _))) =
-                            (node.inputs.get(0), node.inputs.get(1))
+                            (node.inputs.first(), node.inputs.get(1))
                         {
                             if let (Some(&left_row), Some(&right_row)) = (
                                 intermediate_values.get(left_idx),

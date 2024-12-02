@@ -18,7 +18,7 @@ fn preprocess_image(img_path: &str) -> Result<Vec<f32>, Box<dyn std::error::Erro
         .collect();
 
     // Create a batch dimension by wrapping the flattened pixels
-    let mut input = Vec::with_capacity(1 * 28 * 28);
+    let mut input = Vec::with_capacity(28 * 28);
     input.extend_from_slice(&pixels);
     Ok(input)
 }
@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Print the output probabilities
     println!("\nOutput probabilities for digits 0-9:");
-    if let Some(probabilities) = result.get(0) {
+    if let Some(probabilities) = result.first() {
         // The model outputs logits, so we need to apply softmax
         let max_logit = probabilities
             .iter()

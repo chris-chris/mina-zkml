@@ -3,7 +3,6 @@ use kimchi::circuits::{
     wires::Wire,
 };
 use mina_curves::pasta::Fp;
-use std::borrow::Cow;
 use tract_onnx::prelude::*;
 
 use crate::graph::model::{OperationType, SerializableNode};
@@ -161,35 +160,35 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
     // Check operation type based on the node's operation name
     let op_name = node.op.name();
     match op_name {
-        name if name == Cow::from("Const") => {
+        name if name == *"Const" => {
             println!("Found Const operation");
             Some(OperationType::Const)
         }
-        name if name == Cow::from("MatMul") || name == Cow::from("Gemm") => {
+        name if name == *"MatMul" || name == *"Gemm" => {
             println!("Found matrix operation: {}", name);
             Some(OperationType::MatMul)
         }
-        name if name == Cow::from("EinSum") => {
+        name if name == *"EinSum" => {
             println!("Found matrix operation: {}", name);
             Some(OperationType::EinSum)
         }
-        name if name == Cow::from("Relu") || name == Cow::from("Max") => {
+        name if name == *"Relu" || name == *"Max" => {
             println!("Found ReLU/Max operation: {}", name);
-            if name == Cow::from("Max") {
+            if name == *"Max" {
                 Some(OperationType::Max)
             } else {
                 Some(OperationType::Relu)
             }
         }
-        name if name == Cow::from("Sigmoid") => {
+        name if name == *"Sigmoid" => {
             println!("Found Sigmoid operation");
             Some(OperationType::Sigmoid)
         }
-        name if name == Cow::from("Add") => {
+        name if name == *"Add" => {
             println!("Found Add operation: {}", name);
             Some(OperationType::Add)
         }
-        name if name == Cow::from("Reshape") => {
+        name if name == *"Reshape" => {
             println!("Found Reshape operation");
             Some(OperationType::Reshape)
         }
@@ -197,7 +196,7 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found RmAxis operation");
             Some(OperationType::RmAxis)
         }
-        name if name == Cow::from("Source") => {
+        name if name == *"Source" => {
             println!("Found Input operation");
             Some(OperationType::Input)
         }
@@ -216,7 +215,7 @@ mod tests {
     fn test_matmul_gate_generation() {
         let op = OnnxOperation::MatMul { m: 2, n: 2, k: 2 };
         let gates = op.to_circuit_gates(0).unwrap();
-        assert!(gates.len() > 0);
+        assert!(!gates.is_empty());
     }
 
     #[test]

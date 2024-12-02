@@ -20,6 +20,12 @@ pub struct ModelCircuitBuilder {
     current_row: usize,
 }
 
+impl Default for ModelCircuitBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelCircuitBuilder {
     pub fn new() -> Self {
         Self { current_row: 0 }
@@ -66,8 +72,8 @@ impl ModelCircuitBuilder {
         let get_domain_size_lower_bound = |zk_rows: usize| circuit_lower_bound + zk_rows;
 
         // Start with minimum values
-        let mut zk_rows = 3;
-        let mut domain_size_lower_bound = get_domain_size_lower_bound(zk_rows);
+        let zk_rows = 3;
+        let domain_size_lower_bound = get_domain_size_lower_bound(zk_rows);
 
         // Calculate initial domain size
         let mut domain_size = match Radix2EvaluationDomain::<Fp>::new(domain_size_lower_bound) {
@@ -108,7 +114,7 @@ impl ModelCircuitBuilder {
             .iter()
             .map(|&idx| {
                 if let NodeType::Node(node) = &model.graph.nodes[&idx] {
-                    node.out_dims.iter().fold(1, |acc: usize, &x| acc * x)
+                    node.out_dims.iter().product::<usize>()
                 } else {
                     0
                 }
@@ -159,7 +165,7 @@ impl ModelCircuitBuilder {
                 match node.op_type {
                     OperationType::MatMul => {
                         let output_size: usize =
-                            node.out_dims.iter().fold(1, |acc: usize, &x| acc * x);
+                            node.out_dims.iter().product();
 
                         // Add computation gates
                         for i in 0..output_size {
@@ -175,7 +181,7 @@ impl ModelCircuitBuilder {
                     }
                     OperationType::Relu => {
                         let output_size: usize =
-                            node.out_dims.iter().fold(1, |acc: usize, &x| acc * x);
+                            node.out_dims.iter().product();
 
                         // Add computation gates
                         for i in 0..output_size {
@@ -191,7 +197,7 @@ impl ModelCircuitBuilder {
                     }
                     OperationType::Add => {
                         let output_size: usize =
-                            node.out_dims.iter().fold(1, |acc: usize, &x| acc * x);
+                            node.out_dims.iter().product();
 
                         // Add computation gates
                         for i in 0..output_size {

@@ -4,7 +4,7 @@ use crate::graph::{
         Model, NodeType, OperationType, ParsedNodes, SerializableNode, VarVisibility, Visibility,
     },
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap};
 
 #[test]
 fn test_matrix_dimension_mismatch() {

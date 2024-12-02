@@ -2,7 +2,7 @@ use ark_ff::{UniformRand, Zero};
 use ark_poly::EvaluationDomain;
 use groupmap::GroupMap;
 use kimchi::{
-    circuits::{constraints::ConstraintSystem, domains::EvaluationDomains, wires::COLUMNS},
+    circuits::{constraints::ConstraintSystem, wires::COLUMNS},
     proof::ProverProof,
     prover_index::ProverIndex,
     verifier_index::VerifierIndex,

@@ -32,7 +32,6 @@ fn test_model_mnist() {
     test_model_with_args(&model_path, run_args, visibility);
 }
 
-// TODO : Remove or uncomment the below case.
 #[test]
 fn test_model_cardionet() {
     let run_args = RunArgs {
@@ -48,7 +47,6 @@ fn test_model_cardionet() {
     test_model_with_args(&model_path, run_args, visibility);
 }
 
-// TODO : Remove or uncomment the below case.
 #[test]
 fn test_model_smol_llm() {
     let run_args = RunArgs {

@@ -164,8 +164,7 @@ impl ModelCircuitBuilder {
             if let NodeType::Node(node) = node {
                 match node.op_type {
                     OperationType::MatMul => {
-                        let output_size: usize =
-                            node.out_dims.iter().product();
+                        let output_size: usize = node.out_dims.iter().product();
 
                         // Add computation gates
                         for i in 0..output_size {
@@ -180,8 +179,7 @@ impl ModelCircuitBuilder {
                         self.current_row += output_size;
                     }
                     OperationType::Relu => {
-                        let output_size: usize =
-                            node.out_dims.iter().product();
+                        let output_size: usize = node.out_dims.iter().product();
 
                         // Add computation gates
                         for i in 0..output_size {
@@ -196,8 +194,7 @@ impl ModelCircuitBuilder {
                         self.current_row += output_size;
                     }
                     OperationType::Add => {
-                        let output_size: usize =
-                            node.out_dims.iter().product();
+                        let output_size: usize = node.out_dims.iter().product();
 
                         // Add computation gates
                         for i in 0..output_size {

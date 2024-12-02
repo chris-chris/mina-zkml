@@ -1,13 +1,15 @@
 use crate::graph::{
-    model::{Model, NodeType, ParsedNodes, SerializableNode, VarVisibility, Visibility, OperationType},
     errors::GraphError,
+    model::{
+        Model, NodeType, OperationType, ParsedNodes, SerializableNode, VarVisibility, Visibility,
+    },
 };
 use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn test_matrix_dimension_mismatch() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input nodes (id: 0, 1)
     let input_node1 = SerializableNode {
         inputs: vec![],
@@ -67,7 +69,7 @@ fn test_matrix_dimension_mismatch() {
 #[test]
 fn test_relu_edge_cases() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input node (id: 0)
     let input_node = SerializableNode {
         inputs: vec![],
@@ -125,7 +127,7 @@ fn test_relu_edge_cases() {
 #[test]
 fn test_sigmoid_edge_cases() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input node (id: 0)
     let input_node = SerializableNode {
         inputs: vec![],
@@ -167,10 +169,22 @@ fn test_sigmoid_edge_cases() {
     // Test with extreme values
     let input = vec![-1000.0, -20.0, 20.0, 1000.0];
     let result = model.graph.execute(&[input]).unwrap();
-    assert!((result[0][0] - 0.0).abs() < 1e-6, "Failed on extreme negative value");
-    assert!((result[0][1] - 0.0).abs() < 1e-6, "Failed on large negative value");
-    assert!((result[0][2] - 1.0).abs() < 1e-6, "Failed on large positive value");
-    assert!((result[0][3] - 1.0).abs() < 1e-6, "Failed on extreme positive value");
+    assert!(
+        (result[0][0] - 0.0).abs() < 1e-6,
+        "Failed on extreme negative value"
+    );
+    assert!(
+        (result[0][1] - 0.0).abs() < 1e-6,
+        "Failed on large negative value"
+    );
+    assert!(
+        (result[0][2] - 1.0).abs() < 1e-6,
+        "Failed on large positive value"
+    );
+    assert!(
+        (result[0][3] - 1.0).abs() < 1e-6,
+        "Failed on extreme positive value"
+    );
 
     // Test with zeros and small numbers
     let input = vec![-1e-10, 0.0, 1e-10, 1.0];
@@ -179,18 +193,25 @@ fn test_sigmoid_edge_cases() {
     assert_eq!(result[0][0], 0.5, "Failed on small negative number");
     assert_eq!(result[0][1], 0.5, "Failed on zero");
     assert_eq!(result[0][2], 0.5, "Failed on small positive number");
-    assert!((result[0][3] - 0.7310586).abs() < 1e-6, "Failed on regular number");
+    assert!(
+        (result[0][3] - 0.7310586).abs() < 1e-6,
+        "Failed on regular number"
+    );
 
     // Test with special values
     let input = vec![f32::NEG_INFINITY, -0.0, 0.0, f32::INFINITY];
     let result = model.graph.execute(&[input]).unwrap();
-    assert_eq!(result[0], vec![0.0, 0.5, 0.5, 1.0], "Failed on special values");
+    assert_eq!(
+        result[0],
+        vec![0.0, 0.5, 0.5, 1.0],
+        "Failed on special values"
+    );
 }
 
 #[test]
 fn test_reshape_edge_cases() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input node (id: 0)
     let input_node = SerializableNode {
         inputs: vec![],

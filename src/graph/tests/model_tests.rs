@@ -1,14 +1,16 @@
 use super::*;
 use crate::graph::{
-    model::{Model, NodeType, ParsedNodes, SerializableNode, VarVisibility, Visibility, OperationType},
     errors::GraphError,
+    model::{
+        Model, NodeType, OperationType, ParsedNodes, SerializableNode, VarVisibility, Visibility,
+    },
 };
 use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn test_matmul_operation() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input nodes (id: 0, 1)
     let input_node1 = SerializableNode {
         inputs: vec![],
@@ -63,8 +65,11 @@ fn test_matmul_operation() {
     let input1 = vec![1.0, 2.0];
     // Matrix: [[5, 6], [7, 8]]
     let input2 = vec![5.0, 6.0, 7.0, 8.0];
-    
-    let result = model.graph.execute(&[input1.clone(), input2.clone()]).unwrap();
+
+    let result = model
+        .graph
+        .execute(&[input1.clone(), input2.clone()])
+        .unwrap();
 
     // Expected result: [17, 23]
     // First element: 1 * 5 + 2 * 6 = 17 (Transpose the vector for multiplication, same as pytorch)
@@ -81,7 +86,7 @@ fn test_matmul_operation() {
 #[test]
 fn test_relu_operation() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input node (id: 0)
     let input_node = SerializableNode {
         inputs: vec![],
@@ -132,7 +137,7 @@ fn test_relu_operation() {
 #[test]
 fn test_sigmoid_operation() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input node (id: 0)
     let input_node = SerializableNode {
         inputs: vec![],
@@ -179,7 +184,7 @@ fn test_sigmoid_operation() {
     // sigmoid(x) = 1 / (1 + e^(-x))
     assert_eq!(result.len(), 1);
     assert!((result[0][0] - 0.119).abs() < 0.001); // sigmoid(-2) ≈ 0.119
-    assert!((result[0][1] - 0.5).abs() < 0.001);   // sigmoid(0) = 0.5
+    assert!((result[0][1] - 0.5).abs() < 0.001); // sigmoid(0) = 0.5
     assert!((result[0][2] - 0.881).abs() < 0.001); // sigmoid(2) ≈ 0.881
 
     // Test with invalid input shape
@@ -191,7 +196,7 @@ fn test_sigmoid_operation() {
 #[test]
 fn test_add_operation() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input nodes (id: 0, 1)
     let input_node1 = SerializableNode {
         inputs: vec![],
@@ -257,7 +262,7 @@ fn test_add_operation() {
 #[test]
 fn test_einsum_operation() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input nodes (id: 0, 1)
     let input_node1 = SerializableNode {
         inputs: vec![],
@@ -311,7 +316,7 @@ fn test_einsum_operation() {
     let input1 = vec![1.0, 2.0]; // 2-element vector
     let input2 = vec![5.0, 6.0, 7.0, 8.0]; // 2x2 matrix
     let result = model.graph.execute(&[input1, input2]).unwrap();
-    
+
     // Expected result: [17.0, 23.0]
     assert_eq!(result[0], vec![17.0, 23.0]);
 }
@@ -319,7 +324,7 @@ fn test_einsum_operation() {
 #[test]
 fn test_reshape_operation() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input node (id: 0)
     let input_node = SerializableNode {
         inputs: vec![],
@@ -367,7 +372,7 @@ fn test_reshape_operation() {
 #[test]
 fn test_const_operation() {
     let mut nodes = BTreeMap::new();
-    
+
     // Const node (id: 0)
     let const_node = SerializableNode {
         inputs: vec![],
@@ -402,7 +407,7 @@ fn test_const_operation() {
 #[test]
 fn test_cyclic_dependency() {
     let mut nodes = BTreeMap::new();
-    
+
     // Create a cycle: node 0 -> node 1 -> node 2 -> node 0
     let node0 = SerializableNode {
         inputs: vec![(2, 0)], // Creates cycle
@@ -451,7 +456,7 @@ fn test_cyclic_dependency() {
 #[test]
 fn test_invalid_output_slot() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input node (id: 0)
     let input_node = SerializableNode {
         inputs: vec![],
@@ -485,7 +490,7 @@ fn test_invalid_output_slot() {
 #[test]
 fn test_missing_node() {
     let mut nodes = BTreeMap::new();
-    
+
     // Input node (id: 0)
     let input_node = SerializableNode {
         inputs: vec![],

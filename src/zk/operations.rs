@@ -3,10 +3,10 @@ use kimchi::circuits::{
     wires::Wire,
 };
 use mina_curves::pasta::Fp;
-use tract_onnx::prelude::*;
 use std::borrow::Cow;
+use tract_onnx::prelude::*;
 
-use crate::graph::model::{SerializableNode, OperationType};
+use crate::graph::model::{OperationType, SerializableNode};
 use anyhow::Result;
 
 /// Maps ONNX operations to Kimchi circuit gates
@@ -14,9 +14,9 @@ use anyhow::Result;
 pub enum OnnxOperation {
     /// Matrix multiplication (Gemm/MatMul)
     MatMul {
-        m: usize,  // Number of rows in first matrix
-        n: usize,  // Number of columns in second matrix
-        k: usize,  // Number of columns in first matrix/rows in second matrix
+        m: usize, // Number of rows in first matrix
+        n: usize, // Number of columns in second matrix
+        k: usize, // Number of columns in first matrix/rows in second matrix
     },
     /// ReLU activation
     Relu,
@@ -77,21 +77,15 @@ impl OnnxOperation {
             OnnxOperation::Relu | OnnxOperation::Max => {
                 // ReLU implemented using range check and generic gates
                 let mut gates = Vec::new();
-                
+
                 // Range check for input
-                let range_check = CircuitGate::new(
-                    GateType::RangeCheck0,
-                    [Wire::new(start_row, 0); 7],
-                    vec![],
-                );
+                let range_check =
+                    CircuitGate::new(GateType::RangeCheck0, [Wire::new(start_row, 0); 7], vec![]);
                 gates.push(range_check);
 
                 // Generic gate for max(0, x) logic
-                let generic = CircuitGate::new(
-                    GateType::Generic,
-                    [Wire::new(start_row + 1, 0); 7],
-                    vec![],
-                );
+                let generic =
+                    CircuitGate::new(GateType::Generic, [Wire::new(start_row + 1, 0); 7], vec![]);
                 gates.push(generic);
 
                 Ok(gates)
@@ -100,13 +94,10 @@ impl OnnxOperation {
             OnnxOperation::Sigmoid => {
                 // Sigmoid implemented using generic gates for the sigmoid function
                 let mut gates = Vec::new();
-                
+
                 // Generic gate for sigmoid computation
-                let generic = CircuitGate::new(
-                    GateType::Generic,
-                    [Wire::new(start_row, 0); 7],
-                    vec![],
-                );
+                let generic =
+                    CircuitGate::new(GateType::Generic, [Wire::new(start_row, 0); 7], vec![]);
                 gates.push(generic);
 
                 Ok(gates)
@@ -115,7 +106,7 @@ impl OnnxOperation {
             OnnxOperation::Add | OnnxOperation::EinSum => {
                 // Addition operation
                 let mut gates = Vec::new();
-                
+
                 // Generic gate for addition
                 let add_gate = CircuitGate::new(
                     GateType::ForeignFieldAdd,
@@ -146,7 +137,7 @@ pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
                 let n = node.out_dims[1];
                 let k = if node.inputs.len() == 2 {
                     // For MatMul, k is the inner dimension
-                    node.out_dims[1]  // This should be derived from input dimensions
+                    node.out_dims[1] // This should be derived from input dimensions
                 } else {
                     0
                 };
@@ -154,7 +145,7 @@ pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
             } else {
                 None
             }
-        },
+        }
         OperationType::Relu => Some(OnnxOperation::Relu),
         OperationType::Sigmoid => Some(OnnxOperation::Sigmoid),
         OperationType::Add => Some(OnnxOperation::Add),
@@ -173,15 +164,15 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
         name if name == Cow::from("Const") => {
             println!("Found Const operation");
             Some(OperationType::Const)
-        },
+        }
         name if name == Cow::from("MatMul") || name == Cow::from("Gemm") => {
             println!("Found matrix operation: {}", name);
             Some(OperationType::MatMul)
-        },
+        }
         name if name == Cow::from("EinSum") => {
             println!("Found matrix operation: {}", name);
             Some(OperationType::EinSum)
-        },
+        }
         name if name == Cow::from("Relu") || name == Cow::from("Max") => {
             println!("Found ReLU/Max operation: {}", name);
             if name == Cow::from("Max") {
@@ -189,27 +180,27 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             } else {
                 Some(OperationType::Relu)
             }
-        },
+        }
         name if name == Cow::from("Sigmoid") => {
             println!("Found Sigmoid operation");
             Some(OperationType::Sigmoid)
-        },
+        }
         name if name == Cow::from("Add") => {
             println!("Found Add operation: {}", name);
             Some(OperationType::Add)
-        },
+        }
         name if name == Cow::from("Reshape") => {
             println!("Found Reshape operation");
             Some(OperationType::Reshape)
-        },
+        }
         name if name.starts_with("Rm(") => {
             println!("Found RmAxis operation");
             Some(OperationType::RmAxis)
-        },
+        }
         name if name == Cow::from("Source") => {
             println!("Found Input operation");
             Some(OperationType::Input)
-        },
+        }
         name => {
             println!("Unknown operation: {}", name);
             None

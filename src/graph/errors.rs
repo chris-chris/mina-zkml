@@ -1,4 +1,3 @@
-
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, Copy, PartialEq)]
@@ -24,5 +23,5 @@ pub enum GraphError {
     #[error("Invalid Output Shape")]
     InvalidOutputShape,
     #[error("Invalid parameter")]
-    InvalidParams
+    InvalidParams,
 }

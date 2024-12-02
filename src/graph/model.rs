@@ -363,13 +363,13 @@ impl ParsedNodes {
                 } else {
                     Err(GraphError::InvalidInputShape)
                 }
-            },
+            }
             OperationType::MatMul | OperationType::EinSum => {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInputShape);
                 }
 
-                let input = &inputs[0];  // Shape: [784]
+                let input = &inputs[0]; // Shape: [784]
                 let weights = if inputs.len() > 1 {
                     &inputs[1]
                 } else if let Some(weights) = &node.weights {
@@ -377,32 +377,34 @@ impl ParsedNodes {
                 } else {
                     return Err(GraphError::InvalidInputShape);
                 };
-            
-                let input_dim = input.len();  // 784
-                let output_dim = node.out_dims.iter().product();  // 512
-                let weight_rows = output_dim;  // 512 (PyTorch convention)
-                let weight_cols = input_dim;   // 784 (PyTorch convention)
-                
+
+                let input_dim = input.len(); // 784
+                let output_dim = node.out_dims.iter().product(); // 512
+                let weight_rows = output_dim; // 512 (PyTorch convention)
+                let weight_cols = input_dim; // 784 (PyTorch convention)
+
                 // Verify dimensions match
                 if weights.len() != weight_rows * weight_cols {
                     return Err(GraphError::InvalidInputShape);
                 }
 
                 let mut output = vec![0.0; output_dim];
-                
+
                 // PyTorch-style matrix multiplication
-                for i in 0..output_dim {  // For each output element
+                for i in 0..output_dim {
+                    // For each output element
                     let mut sum = 0.0;
-                    for j in 0..input_dim {  // For each input element
+                    for j in 0..input_dim {
+                        // For each input element
                         // weights are stored in [output_dim, input_dim] format
-                        let weight_idx = i * input_dim + j;  // Row-major indexing
+                        let weight_idx = i * input_dim + j; // Row-major indexing
                         sum += input[j] * weights[weight_idx];
                     }
                     output[i] = sum;
                 }
-            
+
                 Ok(vec![output])
-            },
+            }
             OperationType::Add => {
                 let a = &inputs[0];
                 let b = if inputs.len() > 1 {
@@ -417,17 +419,15 @@ impl ParsedNodes {
                     return Err(GraphError::InvalidInputShape);
                 }
                 Ok(vec![a.iter().zip(b.iter()).map(|(&x, &y)| x + y).collect()])
-            },
+            }
             OperationType::Relu | OperationType::Max => {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInputShape);
                 }
 
-                let result = inputs[0].iter()
-                    .map(|&x| x.max(0.0))
-                    .collect();
+                let result = inputs[0].iter().map(|&x| x.max(0.0)).collect();
                 Ok(vec![result])
-            },
+            }
             OperationType::Sigmoid => {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInputShape);
@@ -450,7 +450,7 @@ impl ParsedNodes {
                         }
                     })
                     .collect()])
-            },
+            }
             OperationType::RmAxis => {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInputShape);
@@ -458,13 +458,13 @@ impl ParsedNodes {
 
                 let expected_size: usize = node.out_dims.iter().product();
                 let input = &inputs[0];
-                
+
                 if input.len() != expected_size {
                     return Err(GraphError::InvalidInputShape);
                 }
 
                 Ok(vec![input.clone()])
-            },
+            }
             OperationType::Reshape => {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInputShape);

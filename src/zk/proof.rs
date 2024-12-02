@@ -1,32 +1,24 @@
+use ark_ff::{UniformRand, Zero};
+use ark_poly::EvaluationDomain;
+use groupmap::GroupMap;
 use kimchi::{
-    circuits::{
-        constraints::ConstraintSystem,
-        domains::EvaluationDomains,
-        wires::COLUMNS,
-    },
+    circuits::{constraints::ConstraintSystem, domains::EvaluationDomains, wires::COLUMNS},
+    proof::ProverProof,
     prover_index::ProverIndex,
     verifier_index::VerifierIndex,
-    proof::ProverProof,
 };
 use mina_curves::pasta::{Fp, Vesta, VestaParameters};
 use mina_poseidon::{
     constants::PlonkSpongeConstantsKimchi,
     sponge::{DefaultFqSponge, DefaultFrSponge},
 };
-use ark_ff::{Zero, UniformRand};
-use ark_poly::EvaluationDomain;
-use std::{sync::Arc, array};
-use poly_commitment::{
-    commitment::CommitmentCurve,
-    ipa::SRS,
-    SRS as _,
-};
-use groupmap::GroupMap;
-use rand::{thread_rng, rngs::ThreadRng};
+use poly_commitment::{commitment::CommitmentCurve, ipa::SRS, SRS as _};
+use rand::{rngs::ThreadRng, thread_rng};
+use std::{array, sync::Arc};
 
 use super::wiring::ModelCircuitBuilder;
-use crate::graph::model::Model;
 use super::ZkOpeningProof;
+use crate::graph::model::Model;
 
 type SpongeParams = PlonkSpongeConstantsKimchi;
 type BaseSponge = DefaultFqSponge<VestaParameters, SpongeParams>;
@@ -57,21 +49,31 @@ impl ProofSystem {
         let (gates, domain_size, zk_rows) = builder.build_circuit(model);
 
         // Calculate total number of public inputs and outputs
-        let num_public_inputs = model.graph.inputs.iter().map(|&idx| {
-            if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&idx] {
-                node.out_dims.iter().product::<usize>()
-            } else {
-                0usize
-            }
-        }).sum::<usize>();
+        let num_public_inputs = model
+            .graph
+            .inputs
+            .iter()
+            .map(|&idx| {
+                if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&idx] {
+                    node.out_dims.iter().product::<usize>()
+                } else {
+                    0usize
+                }
+            })
+            .sum::<usize>();
 
-        let num_public_outputs = model.graph.outputs.iter().map(|&(node, _)| {
-            if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&node] {
-                node.out_dims.iter().product::<usize>()
-            } else {
-                0usize
-            }
-        }).sum::<usize>();
+        let num_public_outputs = model
+            .graph
+            .outputs
+            .iter()
+            .map(|&(node, _)| {
+                if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&node] {
+                    node.out_dims.iter().product::<usize>()
+                } else {
+                    0usize
+                }
+            })
+            .sum::<usize>();
 
         let total_public = num_public_outputs; // Only outputs are public
 
@@ -119,20 +121,28 @@ impl ProofSystem {
     }
 
     /// Create witness for the circuit
-    fn create_witness(&self, inputs: &[Vec<f32>]) -> Result<([Vec<Fp>; COLUMNS], Vec<Vec<f32>>), String> {
+    fn create_witness(
+        &self,
+        inputs: &[Vec<f32>],
+    ) -> Result<([Vec<Fp>; COLUMNS], Vec<Vec<f32>>), String> {
         // First execute the model to get outputs
-        let outputs = self.model.graph.execute(inputs)
+        let outputs = self
+            .model
+            .graph
+            .execute(inputs)
             .map_err(|e| format!("Failed to execute model: {:?}", e))?;
 
         // Calculate initial witness size (without padding)
         let mut witness_size = 0;
-        
+
         // Convert inputs and outputs to field elements
-        let public_inputs: Vec<Fp> = inputs.iter()
+        let public_inputs: Vec<Fp> = inputs
+            .iter()
             .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x)))
             .collect();
-        
-        let public_outputs: Vec<Fp> = outputs.iter()
+
+        let public_outputs: Vec<Fp> = outputs
+            .iter()
             .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x)))
             .collect();
 
@@ -145,20 +155,21 @@ impl ProofSystem {
                 match node.op_type {
                     crate::graph::model::OperationType::MatMul => {
                         witness_size += node.out_dims.iter().product::<usize>();
-                    },
+                    }
                     crate::graph::model::OperationType::Relu => {
                         witness_size += node.out_dims.iter().product::<usize>();
-                    },
+                    }
                     crate::graph::model::OperationType::Add => {
                         witness_size += node.out_dims.iter().product::<usize>();
-                    },
+                    }
                     _ => {}
                 }
             }
         }
 
         // Ensure witness size is strictly less than domain_size - zk_rows
-        assert!(witness_size < self.domain_size - self.zk_rows,
+        assert!(
+            witness_size < self.domain_size - self.zk_rows,
             "Witness size {} must be strictly less than domain size {} minus zk_rows {}",
             witness_size,
             self.domain_size,
@@ -185,10 +196,11 @@ impl ProofSystem {
                     crate::graph::model::OperationType::MatMul => {
                         let input_size = node.inputs[0].1;
                         let output_size = node.out_dims.iter().product();
-                        
+
                         // Get input values
                         let input_values = if let Some((input_idx, _)) = node.inputs.first() {
-                            intermediate_values.get(input_idx)
+                            intermediate_values
+                                .get(input_idx)
                                 .map(|&row| (0..input_size).map(|i| witness[0][row + i]).collect())
                                 .unwrap_or_else(|| (0..input_size).map(|i| witness[0][i]).collect())
                         } else {
@@ -211,13 +223,19 @@ impl ProofSystem {
                             intermediate_values.insert(*idx, current_row);
                             current_row += output_size;
                         }
-                    },
+                    }
                     crate::graph::model::OperationType::Add => {
-                        if let (Some((left_idx, _)), Some((right_idx, _))) = (node.inputs.get(0), node.inputs.get(1)) {
-                            if let (Some(&left_row), Some(&right_row)) = (intermediate_values.get(left_idx), intermediate_values.get(right_idx)) {
+                        if let (Some((left_idx, _)), Some((right_idx, _))) =
+                            (node.inputs.get(0), node.inputs.get(1))
+                        {
+                            if let (Some(&left_row), Some(&right_row)) = (
+                                intermediate_values.get(left_idx),
+                                intermediate_values.get(right_idx),
+                            ) {
                                 let size = node.out_dims.iter().product();
                                 for i in 0..size {
-                                    let result = witness[0][left_row + i] + witness[0][right_row + i];
+                                    let result =
+                                        witness[0][left_row + i] + witness[0][right_row + i];
                                     // Set the result in all columns
                                     for col in 0..COLUMNS {
                                         witness[col][current_row + i] = result;
@@ -227,8 +245,9 @@ impl ProofSystem {
                                 current_row += size;
                             }
                         }
-                    },
-                    crate::graph::model::OperationType::Relu | crate::graph::model::OperationType::Max => {
+                    }
+                    crate::graph::model::OperationType::Relu
+                    | crate::graph::model::OperationType::Max => {
                         if let Some((input_idx, _)) = node.inputs.first() {
                             if let Some(&input_row) = intermediate_values.get(input_idx) {
                                 let size = node.out_dims.iter().product();
@@ -244,7 +263,7 @@ impl ProofSystem {
                                 current_row += size;
                             }
                         }
-                    },
+                    }
                     _ => {}
                 }
             }
@@ -269,10 +288,7 @@ impl ProofSystem {
     }
 
     /// Generate model output and create a proof
-    pub fn prove(
-        &self,
-        inputs: &[Vec<f32>],
-    ) -> Result<ProverOutput, String> {
+    pub fn prove(&self, inputs: &[Vec<f32>]) -> Result<ProverOutput, String> {
         // Create witness and get outputs
         let (witness, outputs) = self.create_witness(inputs)?;
 
@@ -287,7 +303,8 @@ impl ProofSystem {
             &[],
             &self.prover_index,
             &mut rng,
-        ).map_err(|e| format!("Failed to create proof: {:?}", e))?;
+        )
+        .map_err(|e| format!("Failed to create proof: {:?}", e))?;
 
         Ok(ProverOutput {
             output: outputs,
@@ -302,7 +319,8 @@ impl ProofSystem {
         proof: &ProverProof<Vesta, ZkOpeningProof>,
     ) -> Result<bool, String> {
         // Convert output to field elements
-        let public_values: Vec<Fp> = output.iter()
+        let public_values: Vec<Fp> = output
+            .iter()
             .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x)))
             .collect();
 
@@ -317,7 +335,8 @@ impl ProofSystem {
             &self.verifier_index,
             proof,
             &public_values,
-        ).map(|_| true)
+        )
+        .map(|_| true)
         .map_err(|e| format!("Failed to verify proof: {:?}", e))
     }
 }
@@ -340,26 +359,24 @@ mod tests {
             output: Visibility::Public,
         };
 
-        let model = Model::new(
-            "models/simple_perceptron.onnx",
-            &run_args,
-            &visibility,
-        ).expect("Failed to load model");
+        let model = Model::new("models/simple_perceptron.onnx", &run_args, &visibility)
+            .expect("Failed to load model");
 
         // Create proof system
         let proof_system = ProofSystem::new(&model);
 
         // Create sample input - pad to match expected size [1, 10]
         let input = vec![vec![
-            1.0, 0.5, -0.3, 0.8, -0.2,  // Original values
-            0.0, 0.0, 0.0, 0.0, 0.0     // Padding to reach size 10
+            1.0, 0.5, -0.3, 0.8, -0.2, // Original values
+            0.0, 0.0, 0.0, 0.0, 0.0, // Padding to reach size 10
         ]];
 
         // Generate output and proof
         let prover_output = proof_system.prove(&input).expect("Failed to create proof");
-        
+
         // Verify the proof with just output and proof
-        let result = proof_system.verify(&prover_output.output, &prover_output.proof)
+        let result = proof_system
+            .verify(&prover_output.output, &prover_output.proof)
             .expect("Failed to verify proof");
 
         assert!(result);

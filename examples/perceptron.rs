@@ -15,18 +15,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load the perceptron model
     println!("Loading perceptron model...");
-    let model = Model::new(
-        "models/simple_perceptron.onnx",
-        &run_args,
-        &visibility,
-    )?;
+    let model = Model::new("models/simple_perceptron.onnx", &run_args, &visibility)?;
 
     // Print model structure
     println!("\nModel structure:");
     println!("Number of nodes: {}", model.graph.nodes.len());
     println!("Input nodes: {:?}", model.graph.inputs);
     println!("Output nodes: {:?}", model.graph.outputs);
-    
+
     // Print node connections
     println!("\nNode connections:");
     for (id, node) in &model.graph.nodes {
@@ -50,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Execute the model
     let result = model.graph.execute(&[input])?;
-    
+
     // Print the output
     println!("\nOutput vector (size 3, after ReLU):");
     println!("{:?}", result[0]);

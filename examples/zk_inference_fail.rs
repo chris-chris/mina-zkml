@@ -16,11 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         output: Visibility::Public,
     };
 
-    let model = Model::new(
-        "models/simple_perceptron.onnx",
-        &run_args,
-        &visibility,
-    )?;
+    let model = Model::new("models/simple_perceptron.onnx", &run_args, &visibility)?;
 
     // 2. Create proof system
     println!("Creating proof system...");
@@ -28,8 +24,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Create sample input (with proper padding to size 10)
     let input = vec![vec![
-        1.0, 0.5, -0.3, 0.8, -0.2,  // Original values
-        0.0, 0.0, 0.0, 0.0, 0.0     // Padding to reach size 10
+        1.0, 0.5, -0.3, 0.8, -0.2, // Original values
+        0.0, 0.0, 0.0, 0.0, 0.0, // Padding to reach size 10
     ]];
 
     // 4. Generate output and proof
@@ -48,7 +44,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nResults:");
     println!("Model execution successful: ✓");
     println!("Proof creation successful: ✓");
-    println!("Modified output verification: {}", if !is_valid { "✗ Invalid (Expected)" } else { "✓ Valid (Unexpected!)" });
+    println!(
+        "Modified output verification: {}",
+        if !is_valid {
+            "✗ Invalid (Expected)"
+        } else {
+            "✓ Valid (Unexpected!)"
+        }
+    );
 
     Ok(())
 }

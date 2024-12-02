@@ -4,48 +4,42 @@ use std::collections::HashMap;
 
 fn preprocess_image(img_path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     // Load and convert image to grayscale
-    let img = image::open(img_path)?
-        .into_luma8();
-    
+    let img = image::open(img_path)?.into_luma8();
+
     // Ensure image is 28x28
-    let resized = image::imageops::resize(
-        &img,
-        28,
-        28,
-        image::imageops::FilterType::Lanczos3
-    );
-    
+    let resized = image::imageops::resize(&img, 28, 28, image::imageops::FilterType::Lanczos3);
+
     // Convert to f32 and normalize to [0, 1]
-    let pixels: Vec<f32> = resized.into_raw()
-        .into_iter()
-        .map(|x| x as f32)
-        .collect();
+    let pixels: Vec<f32> = resized.into_raw().into_iter().map(|x| x as f32).collect();
 
     //Apply normalization
-    let pixels: Vec<f32> = pixels.into_iter()
+    let pixels: Vec<f32> = pixels
+        .into_iter()
         .map(|x| (x / 255.0 - 0.1307) / 0.3081)
         .collect();
 
     // Create a batch dimension by wrapping the flattened pixels
     let mut input = Vec::with_capacity(1 * 28 * 28);
-    input.extend_from_slice(&pixels);    
+    input.extend_from_slice(&pixels);
     Ok(input)
 }
 
 fn get_predicted_digit(logits: &[f32]) -> usize {
     // Apply softmax and find max probability digit
-    let max_logit = logits.iter().take(10).fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-    let exp_sum: f32 = logits.iter()
+    let max_logit = logits
+        .iter()
         .take(10)
-        .map(|&x| (x - max_logit).exp())
-        .sum();
-    
-    let softmax: Vec<f32> = logits.iter()
+        .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+    let exp_sum: f32 = logits.iter().take(10).map(|&x| (x - max_logit).exp()).sum();
+
+    let softmax: Vec<f32> = logits
+        .iter()
         .take(10)
         .map(|&x| ((x - max_logit).exp()) / exp_sum)
         .collect();
 
-    softmax.iter()
+    softmax
+        .iter()
         .enumerate()
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
         .map(|(digit, _)| digit)
@@ -53,13 +47,14 @@ fn get_predicted_digit(logits: &[f32]) -> usize {
 }
 
 fn print_prediction_info(logits: &[f32]) {
-    let max_logit = logits.iter().take(10).fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-    let exp_sum: f32 = logits.iter()
+    let max_logit = logits
+        .iter()
         .take(10)
-        .map(|&x| (x - max_logit).exp())
-        .sum();
-    
-    let softmax: Vec<f32> = logits.iter()
+        .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+    let exp_sum: f32 = logits.iter().take(10).map(|&x| (x - max_logit).exp()).sum();
+
+    let softmax: Vec<f32> = logits
+        .iter()
         .take(10)
         .map(|&x| ((x - max_logit).exp()) / exp_sum)
         .collect();
@@ -83,11 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         output: Visibility::Public,
     };
 
-    let model = Model::new(
-        "models/mnist_mlp.onnx",
-        &run_args,
-        &visibility,
-    )?;
+    let model = Model::new("models/mnist_mlp.onnx", &run_args, &visibility)?;
 
     // 2. Create proof system
     println!("Creating proof system...");
@@ -97,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load first image
     let input1 = preprocess_image("models/data/1052.png")?;
     let input_vec1 = vec![input1];
-    
+
     // Generate output and proof for first image
     let prover_output1 = proof_system.prove(&input_vec1)?;
     println!("First image prediction:");
@@ -105,13 +96,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify proof for first image
     let is_valid1 = proof_system.verify(&prover_output1.output, &prover_output1.proof)?;
-    println!("Verification result: {}", if is_valid1 { "✓ Valid" } else { "✗ Invalid" });
+    println!(
+        "Verification result: {}",
+        if is_valid1 {
+            "✓ Valid"
+        } else {
+            "✗ Invalid"
+        }
+    );
 
     println!("\n=== Test Case 2: Valid Proof for Second Image ===");
     // Load second image
     let input2 = preprocess_image("models/data/1085.png")?;
     let input_vec2 = vec![input2];
-    
+
     // Generate output and proof for second image
     let prover_output2 = proof_system.prove(&input_vec2)?;
     println!("Second image prediction:");
@@ -119,7 +117,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify proof for second image
     let is_valid2 = proof_system.verify(&prover_output2.output, &prover_output2.proof)?;
-    println!("Verification result: {}", if is_valid2 { "✓ Valid" } else { "✗ Invalid" });
+    println!(
+        "Verification result: {}",
+        if is_valid2 {
+            "✓ Valid"
+        } else {
+            "✗ Invalid"
+        }
+    );
 
     println!("\n=== Test Case 3: Invalid Proof - Completely Wrong Outputs ===");
     // Create fake output with opposite predictions
@@ -132,7 +137,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Try to verify with wrong outputs
     let is_valid3 = proof_system.verify(&fake_output1, &prover_output1.proof)?;
-    println!("Verification result: {}", if is_valid3 { "✓ Valid (UNEXPECTED!)" } else { "✗ Invalid (Expected)" });
+    println!(
+        "Verification result: {}",
+        if is_valid3 {
+            "✓ Valid (UNEXPECTED!)"
+        } else {
+            "✗ Invalid (Expected)"
+        }
+    );
 
     println!("\n=== Test Case 4: Invalid Proof - Slightly Modified Outputs ===");
     // Create fake output with small perturbations
@@ -145,13 +157,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Try to verify with slightly modified outputs
     let is_valid4 = proof_system.verify(&fake_output2, &prover_output2.proof)?;
-    println!("Verification result: {}", if is_valid4 { "✓ Valid (UNEXPECTED!)" } else { "✗ Invalid (Expected)" });
+    println!(
+        "Verification result: {}",
+        if is_valid4 {
+            "✓ Valid (UNEXPECTED!)"
+        } else {
+            "✗ Invalid (Expected)"
+        }
+    );
 
     println!("\n=== Summary ===");
-    println!("1. First valid case (1052.png): {}", if is_valid1 { "✓ Valid" } else { "✗ Invalid" });
-    println!("2. Second valid case (1085.png): {}", if is_valid2 { "✓ Valid" } else { "✗ Invalid" });
-    println!("3. Invalid case (inverted logits): {}", if !is_valid3 { "✓ Failed as expected" } else { "✗ Unexpectedly passed" });
-    println!("4. Invalid case (small perturbations): {}", if !is_valid4 { "✓ Failed as expected" } else { "✗ Unexpectedly passed" });
+    println!(
+        "1. First valid case (1052.png): {}",
+        if is_valid1 {
+            "✓ Valid"
+        } else {
+            "✗ Invalid"
+        }
+    );
+    println!(
+        "2. Second valid case (1085.png): {}",
+        if is_valid2 {
+            "✓ Valid"
+        } else {
+            "✗ Invalid"
+        }
+    );
+    println!(
+        "3. Invalid case (inverted logits): {}",
+        if !is_valid3 {
+            "✓ Failed as expected"
+        } else {
+            "✗ Unexpectedly passed"
+        }
+    );
+    println!(
+        "4. Invalid case (small perturbations): {}",
+        if !is_valid4 {
+            "✓ Failed as expected"
+        } else {
+            "✗ Unexpectedly passed"
+        }
+    );
 
     println!("\nThis demonstrates that the zero-knowledge proof system:");
     println!("- Successfully verifies correct model executions");

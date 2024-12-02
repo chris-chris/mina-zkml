@@ -1,16 +1,16 @@
+use ark_ff::Zero;
+use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use kimchi::circuits::{
     gate::{CircuitGate, GateType},
     wires::Wire,
 };
-use ark_ff::Zero;
 use mina_curves::pasta::Fp;
-use ark_poly::{Radix2EvaluationDomain, EvaluationDomain};
 
 use crate::graph::model::{Model, NodeType, OperationType};
 
 // Constants from o1js/proof-systems
-pub const COLUMNS: usize = 15;  // Total number of columns
-pub const PERMUTS: usize = 7;   // Number of permutable columns
+pub const COLUMNS: usize = 15; // Total number of columns
+pub const PERMUTS: usize = 7; // Number of permutable columns
 pub const WIRES: [usize; COLUMNS] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
 // Minimum domain size from o1js/proof-systems
@@ -49,19 +49,19 @@ impl ModelCircuitBuilder {
         // Create wires for the first PERMUTS columns (which can be wired)
         // Each wire references itself by default
         [
-            Wire { row, col: 0 },     // Current row, main wire
-            Wire { row, col: 1 },     // Current row, auxiliary wire 1
-            Wire { row, col: 2 },     // Current row, auxiliary wire 2
-            Wire { row, col: 3 },     // Current row, auxiliary wire 3
-            Wire { row, col: 4 },     // Current row, auxiliary wire 4
-            Wire { row, col: 5 },     // Current row, auxiliary wire 5
-            Wire { row, col: 6 },     // Current row, auxiliary wire 6
+            Wire { row, col: 0 }, // Current row, main wire
+            Wire { row, col: 1 }, // Current row, auxiliary wire 1
+            Wire { row, col: 2 }, // Current row, auxiliary wire 2
+            Wire { row, col: 3 }, // Current row, auxiliary wire 3
+            Wire { row, col: 4 }, // Current row, auxiliary wire 4
+            Wire { row, col: 5 }, // Current row, auxiliary wire 5
+            Wire { row, col: 6 }, // Current row, auxiliary wire 6
         ]
     }
 
     /// Calculate domain size and zk_rows for a given circuit size
     fn calculate_domain_params(circuit_size: usize) -> (usize, usize) {
-        let lookup_domain_size = 0;  // We don't use lookup tables yet
+        let lookup_domain_size = 0; // We don't use lookup tables yet
         let circuit_lower_bound = std::cmp::max(circuit_size, lookup_domain_size + 1);
         let get_domain_size_lower_bound = |zk_rows: usize| circuit_lower_bound + zk_rows;
 
@@ -72,7 +72,10 @@ impl ModelCircuitBuilder {
         // Calculate initial domain size
         let mut domain_size = match Radix2EvaluationDomain::<Fp>::new(domain_size_lower_bound) {
             Some(domain) => std::cmp::max(MIN_DOMAIN_SIZE, domain.size()),
-            None => std::cmp::max(MIN_DOMAIN_SIZE, Self::next_power_of_two(domain_size_lower_bound)),
+            None => std::cmp::max(
+                MIN_DOMAIN_SIZE,
+                Self::next_power_of_two(domain_size_lower_bound),
+            ),
         };
 
         // Calculate number of chunks and required zk_rows
@@ -85,7 +88,10 @@ impl ModelCircuitBuilder {
         if domain_size < domain_size_lower_bound {
             domain_size = match Radix2EvaluationDomain::<Fp>::new(domain_size_lower_bound) {
                 Some(domain) => std::cmp::max(MIN_DOMAIN_SIZE, domain.size()),
-                None => std::cmp::max(MIN_DOMAIN_SIZE, Self::next_power_of_two(domain_size_lower_bound)),
+                None => std::cmp::max(
+                    MIN_DOMAIN_SIZE,
+                    Self::next_power_of_two(domain_size_lower_bound),
+                ),
             };
         }
 
@@ -96,13 +102,18 @@ impl ModelCircuitBuilder {
         let mut gates = Vec::new();
 
         // Calculate total number of public inputs
-        let num_public: usize = model.graph.inputs.iter().map(|&idx| {
-            if let NodeType::Node(node) = &model.graph.nodes[&idx] {
-                node.out_dims.iter().fold(1, |acc: usize, &x| acc * x)
-            } else {
-                0
-            }
-        }).sum::<usize>();
+        let num_public: usize = model
+            .graph
+            .inputs
+            .iter()
+            .map(|&idx| {
+                if let NodeType::Node(node) = &model.graph.nodes[&idx] {
+                    node.out_dims.iter().fold(1, |acc: usize, &x| acc * x)
+                } else {
+                    0
+                }
+            })
+            .sum::<usize>();
 
         // Calculate initial circuit size (without padding)
         let mut circuit_size = num_public;
@@ -114,15 +125,15 @@ impl ModelCircuitBuilder {
                     OperationType::MatMul => {
                         let output_size = node.out_dims.iter().product::<usize>();
                         circuit_size += output_size;
-                    },
+                    }
                     OperationType::Relu => {
                         let output_size = node.out_dims.iter().product::<usize>();
                         circuit_size += output_size;
-                    },
+                    }
                     OperationType::Add => {
                         let output_size = node.out_dims.iter().product::<usize>();
                         circuit_size += output_size;
-                    },
+                    }
                     _ => {}
                 }
             }
@@ -147,8 +158,9 @@ impl ModelCircuitBuilder {
             if let NodeType::Node(node) = node {
                 match node.op_type {
                     OperationType::MatMul => {
-                        let output_size: usize = node.out_dims.iter().fold(1, |acc: usize, &x| acc * x);
-                        
+                        let output_size: usize =
+                            node.out_dims.iter().fold(1, |acc: usize, &x| acc * x);
+
                         // Add computation gates
                         for i in 0..output_size {
                             gates.push(CircuitGate {
@@ -157,13 +169,14 @@ impl ModelCircuitBuilder {
                                 coeffs: vec![Fp::from(1u64)],
                             });
                         }
-                        
+
                         intermediate_rows.insert(*idx, self.current_row);
                         self.current_row += output_size;
-                    },
+                    }
                     OperationType::Relu => {
-                        let output_size: usize = node.out_dims.iter().fold(1, |acc: usize, &x| acc * x);
-                        
+                        let output_size: usize =
+                            node.out_dims.iter().fold(1, |acc: usize, &x| acc * x);
+
                         // Add computation gates
                         for i in 0..output_size {
                             gates.push(CircuitGate {
@@ -172,13 +185,14 @@ impl ModelCircuitBuilder {
                                 coeffs: vec![Fp::from(1u64)],
                             });
                         }
-                        
+
                         intermediate_rows.insert(*idx, self.current_row);
                         self.current_row += output_size;
-                    },
+                    }
                     OperationType::Add => {
-                        let output_size: usize = node.out_dims.iter().fold(1, |acc: usize, &x| acc * x);
-                        
+                        let output_size: usize =
+                            node.out_dims.iter().fold(1, |acc: usize, &x| acc * x);
+
                         // Add computation gates
                         for i in 0..output_size {
                             gates.push(CircuitGate {
@@ -187,10 +201,10 @@ impl ModelCircuitBuilder {
                                 coeffs: vec![Fp::from(1u64)],
                             });
                         }
-                        
+
                         intermediate_rows.insert(*idx, self.current_row);
                         self.current_row += output_size;
-                    },
+                    }
                     _ => {}
                 }
             }

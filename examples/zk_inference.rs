@@ -16,11 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         output: Visibility::Public,
     };
 
-    let model = Model::new(
-        "models/simple_perceptron.onnx",
-        &run_args,
-        &visibility,
-    )?;
+    let model = Model::new("models/simple_perceptron.onnx", &run_args, &visibility)?;
 
     // 2. Create proof system
     println!("Creating proof system...");
@@ -28,8 +24,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Create sample input (with proper padding to size 10)
     let input = vec![vec![
-        1.0, 0.5, -0.3, 0.8, -0.2,  // Original values
-        0.0, 0.0, 0.0, 0.0, 0.0     // Padding to reach size 10
+        1.0, 0.5, -0.3, 0.8, -0.2, // Original values
+        0.0, 0.0, 0.0, 0.0, 0.0, // Padding to reach size 10
     ]];
 
     // 4. Generate output and proof
@@ -44,7 +40,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nResults:");
     println!("Model execution successful: ✓");
     println!("Proof creation successful: ✓");
-    println!("Proof verification: {}", if is_valid { "✓ Valid" } else { "✗ Invalid" });
+    println!(
+        "Proof verification: {}",
+        if is_valid { "✓ Valid" } else { "✗ Invalid" }
+    );
 
     // 6. Demonstrate invalid verification with modified output
     println!("\nTesting invalid case with modified output...");
@@ -52,7 +51,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     modified_output[0][0] += 1.0; // Modify first output value
 
     let is_valid_modified = proof_system.verify(&modified_output, &prover_output.proof)?;
-    println!("Modified output verification: {}", if !is_valid_modified { "✗ Invalid (Expected)" } else { "✓ Valid (Unexpected!)" });
+    println!(
+        "Modified output verification: {}",
+        if !is_valid_modified {
+            "✗ Invalid (Expected)"
+        } else {
+            "✓ Valid (Unexpected!)"
+        }
+    );
 
     Ok(())
 }

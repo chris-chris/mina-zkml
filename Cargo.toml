@@ -7,6 +7,10 @@ edition = "2021"
 name = "mina_zkml"
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "mina-zkml-cli"
+path = "src/bin/cli.rs"
+
 [[example]]
 name = "perceptron"
 path = "examples/perceptron.rs"
@@ -41,6 +45,9 @@ rand = "0.8.5"
 groupmap = { git = "https://github.com/o1-labs/proof-systems" }
 poly-commitment = { git = "https://github.com/o1-labs/proof-systems" }
 mina-poseidon = { git = "https://github.com/o1-labs/proof-systems" }
+clap = { version = "4.5.1", features = ["derive"] }
+prettytable-rs = "0.10.0"
+md5 = "0.7.0"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

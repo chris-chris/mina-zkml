@@ -14,7 +14,7 @@ use mina_poseidon::{
 };
 use poly_commitment::{commitment::CommitmentCurve, ipa::SRS, SRS as _};
 use rand::{rngs::ThreadRng, thread_rng};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::{array, sync::Arc};
 
 use super::wiring::ModelCircuitBuilder;
@@ -56,25 +56,35 @@ impl ProofSystem {
 
         // Calculate total number of public inputs and outputs based on visibility
         let num_public_inputs = if model.visibility.input == Visibility::Public {
-            model.graph.inputs.iter().map(|&idx| {
-                if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&idx] {
-                    node.out_dims.iter().product::<usize>()
-                } else {
-                    0usize
-                }
-            }).sum::<usize>()
+            model
+                .graph
+                .inputs
+                .iter()
+                .map(|&idx| {
+                    if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&idx] {
+                        node.out_dims.iter().product::<usize>()
+                    } else {
+                        0usize
+                    }
+                })
+                .sum::<usize>()
         } else {
             0
         };
 
         let num_public_outputs = if model.visibility.output == Visibility::Public {
-            model.graph.outputs.iter().map(|&(node, _)| {
-                if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&node] {
-                    node.out_dims.iter().product::<usize>()
-                } else {
-                    0usize
-                }
-            }).sum::<usize>()
+            model
+                .graph
+                .outputs
+                .iter()
+                .map(|&(node, _)| {
+                    if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&node] {
+                        node.out_dims.iter().product::<usize>()
+                    } else {
+                        0usize
+                    }
+                })
+                .sum::<usize>()
         } else {
             0
         };
@@ -138,15 +148,15 @@ impl ProofSystem {
 
         // Convert inputs to field elements if public
         let mut witness = array::from_fn(|_| vec![Fp::zero(); self.domain_size]);
-        
+
         if self.model.visibility.input == Visibility::Public {
             let public_inputs: Vec<Fp> = inputs
                 .iter()
                 .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x)))
                 .collect();
-            
+
             witness_size += public_inputs.len();
-            
+
             // Place public inputs at the start
             for (i, &value) in public_inputs.iter().enumerate() {
                 for item in witness.iter_mut().take(COLUMNS) {
@@ -162,9 +172,9 @@ impl ProofSystem {
                 .iter()
                 .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x)))
                 .collect();
-            
+
             witness_size += public_outputs.len();
-            
+
             // Place public outputs after inputs
             for (i, &value) in public_outputs.iter().enumerate() {
                 for item in witness.iter_mut().take(COLUMNS) {
@@ -415,10 +425,7 @@ mod tests {
         let proof_system = ProofSystem::new(&model);
 
         // Create sample input
-        let input = vec![vec![
-            1.0, 0.5, -0.3, 0.8, -0.2,
-            0.0, 0.0, 0.0, 0.0, 0.0,
-        ]];
+        let input = vec![vec![1.0, 0.5, -0.3, 0.8, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]];
 
         // Generate output and proof
         let prover_output = proof_system.prove(&input).expect("Failed to create proof");
@@ -451,10 +458,7 @@ mod tests {
         let proof_system = ProofSystem::new(&model);
 
         // Create sample input
-        let input = vec![vec![
-            1.0, 0.5, -0.3, 0.8, -0.2,
-            0.0, 0.0, 0.0, 0.0, 0.0,
-        ]];
+        let input = vec![vec![1.0, 0.5, -0.3, 0.8, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]];
 
         // Generate proof
         let prover_output = proof_system.prove(&input).expect("Failed to create proof");

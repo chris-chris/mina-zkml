@@ -1,4 +1,5 @@
-use anyhow::{Result, Context, anyhow};
+use anyhow::{anyhow, Context, Result};
+use base64::{engine::general_purpose::STANDARD as base64, Engine as _};
 use clap::{Parser, Subcommand};
 use mina_zkml::{
     graph::model::{Model, RunArgs, VarVisibility, Visibility},
@@ -7,10 +8,9 @@ use mina_zkml::{
 };
 use prettytable::{row, Table};
 use serde_json::{self, json, Value};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::collections::HashMap;
-use base64::{Engine as _, engine::general_purpose::STANDARD as base64};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -87,20 +87,21 @@ fn parse_visibility(s: &str) -> Result<Visibility> {
     match s.to_lowercase().as_str() {
         "public" => Ok(Visibility::Public),
         "private" => Ok(Visibility::Private),
-        _ => Err(anyhow!("Invalid visibility: {}. Must be 'public' or 'private'", s)),
+        _ => Err(anyhow!(
+            "Invalid visibility: {}. Must be 'public' or 'private'",
+            s
+        )),
     }
 }
 
 // Custom serialization for ProverOutput
 fn serialize_prover_output(output: &ProverOutput) -> Result<Vec<u8>> {
-    bincode::serialize(output)
-        .with_context(|| "Failed to serialize prover output")
+    bincode::serialize(output).with_context(|| "Failed to serialize prover output")
 }
 
 // Custom deserialization for ProverOutput
 fn deserialize_prover_output(bytes: &[u8]) -> Result<ProverOutput> {
-    bincode::deserialize(bytes)
-        .with_context(|| "Failed to deserialize prover output")
+    bincode::deserialize(bytes).with_context(|| "Failed to deserialize prover output")
 }
 
 // Validate input JSON format
@@ -145,7 +146,7 @@ fn main() -> Result<()> {
         Commands::Table { model } => {
             let mut table = Table::new();
             table.add_row(row!["Operator", "Input Shape", "Output Shape"]);
-            
+
             let run_args = RunArgs {
                 variables: HashMap::from([("batch_size".to_string(), 1)]),
             };
@@ -157,16 +158,20 @@ fn main() -> Result<()> {
                     input: Visibility::Public,
                     output: Visibility::Public,
                 },
-            ).with_context(|| format!("Failed to load model from {:?}", model))?;
+            )
+            .with_context(|| format!("Failed to load model from {:?}", model))?;
 
             for (_, node_type) in &model.graph.nodes {
                 if let mina_zkml::graph::model::NodeType::Node(node) = node_type {
                     let op_type = format!("{:?}", node.op_type);
-                    
-                    let input_shapes: Vec<String> = node.inputs
+
+                    let input_shapes: Vec<String> = node
+                        .inputs
                         .iter()
                         .filter_map(|(node_id, _)| {
-                            if let Some(mina_zkml::graph::model::NodeType::Node(input_node)) = model.graph.nodes.get(node_id) {
+                            if let Some(mina_zkml::graph::model::NodeType::Node(input_node)) =
+                                model.graph.nodes.get(node_id)
+                            {
                                 Some(format!("{:?}", input_node.out_dims))
                             } else {
                                 None
@@ -187,7 +192,7 @@ fn main() -> Result<()> {
                     ]);
                 }
             }
-            
+
             table.printstd();
         }
         Commands::Convert { model, output } => {
@@ -202,7 +207,8 @@ fn main() -> Result<()> {
                     input: Visibility::Public,
                     output: Visibility::Public,
                 },
-            ).with_context(|| format!("Failed to load model from {:?}", model))?;
+            )
+            .with_context(|| format!("Failed to load model from {:?}", model))?;
 
             let json = serde_json::to_string_pretty(&model)
                 .context("Failed to serialize model to JSON")?;
@@ -210,12 +216,20 @@ fn main() -> Result<()> {
                 .with_context(|| format!("Failed to write JSON to {:?}", output))?;
             println!("Model converted and saved to {:?}", output);
         }
-        Commands::Proof { model, input, output, input_visibility, output_visibility } => {
+        Commands::Proof {
+            model,
+            input,
+            output,
+            input_visibility,
+            output_visibility,
+        } => {
             // Read and validate input data
-            let input_json: Value = serde_json::from_str(&fs::read_to_string(input)
-                .with_context(|| format!("Failed to read input file {:?}", input))?)
-                .with_context(|| "Failed to parse input file as JSON")?;
-            
+            let input_json: Value = serde_json::from_str(
+                &fs::read_to_string(input)
+                    .with_context(|| format!("Failed to read input file {:?}", input))?,
+            )
+            .with_context(|| "Failed to parse input file as JSON")?;
+
             let input_data = validate_input_json(&input_json)?;
 
             // Parse visibility settings
@@ -232,11 +246,13 @@ fn main() -> Result<()> {
                 model.to_str().context("Invalid model path")?,
                 &run_args,
                 &visibility,
-            ).with_context(|| format!("Failed to load model from {:?}", model))?;
+            )
+            .with_context(|| format!("Failed to load model from {:?}", model))?;
 
             // Create proof system and generate proof
             let proof_system = ProofSystem::new(&model);
-            let prover_output = proof_system.prove(&input_data)
+            let prover_output = proof_system
+                .prove(&input_data)
                 .map_err(|e| anyhow!("Failed to generate proof: {}", e))?;
 
             // Serialize the prover output
@@ -261,12 +277,21 @@ fn main() -> Result<()> {
                 .with_context(|| format!("Failed to write proof to {:?}", output))?;
             println!("Proof generated and saved to {:?}", output);
         }
-        Commands::Verify { proof, model, input, output, input_visibility, output_visibility } => {
+        Commands::Verify {
+            proof,
+            model,
+            input,
+            output,
+            input_visibility,
+            output_visibility,
+        } => {
             // Load proof data
-            let proof_data: Value = serde_json::from_str(&fs::read_to_string(proof)
-                .with_context(|| format!("Failed to read proof file {:?}", proof))?)
-                .context("Failed to parse proof data as JSON")?;
-            
+            let proof_data: Value = serde_json::from_str(
+                &fs::read_to_string(proof)
+                    .with_context(|| format!("Failed to read proof file {:?}", proof))?,
+            )
+            .context("Failed to parse proof data as JSON")?;
+
             // Parse visibility settings
             let visibility = VarVisibility {
                 input: parse_visibility(input_visibility)?,
@@ -281,7 +306,8 @@ fn main() -> Result<()> {
                 model.to_str().context("Invalid model path")?,
                 &run_args,
                 &visibility,
-            ).with_context(|| format!("Failed to load model from {:?}", model))?;
+            )
+            .with_context(|| format!("Failed to load model from {:?}", model))?;
 
             // Create proof system
             let proof_system = ProofSystem::new(&model);
@@ -289,8 +315,10 @@ fn main() -> Result<()> {
             // Load and validate input data if needed
             let input_data = if visibility.input == Visibility::Public {
                 if let Some(input_path) = input {
-                    let input_json: Value = serde_json::from_str(&fs::read_to_string(&input_path)
-                        .with_context(|| format!("Failed to read input file {:?}", input_path))?)
+                    let input_json: Value =
+                        serde_json::from_str(&fs::read_to_string(&input_path).with_context(
+                            || format!("Failed to read input file {:?}", input_path),
+                        )?)
                         .context("Failed to parse input file as JSON")?;
                     Some(validate_input_json(&input_json)?)
                 } else {
@@ -303,28 +331,38 @@ fn main() -> Result<()> {
             // Load and validate output data if needed
             let output_data = if visibility.output == Visibility::Public {
                 if let Some(output_path) = output {
-                    let output_json: Value = serde_json::from_str(&fs::read_to_string(&output_path)
-                        .with_context(|| format!("Failed to read output file {:?}", output_path))?)
+                    let output_json: Value =
+                        serde_json::from_str(&fs::read_to_string(&output_path).with_context(
+                            || format!("Failed to read output file {:?}", output_path),
+                        )?)
                         .context("Failed to parse output file as JSON")?;
                     Some(validate_input_json(&output_json)?)
                 } else {
-                    return Err(anyhow!("Output data required for public output verification"));
+                    return Err(anyhow!(
+                        "Output data required for public output verification"
+                    ));
                 }
             } else {
                 None
             };
 
             // Deserialize and verify the proof
-            let proof_bytes = base64.decode(proof_data["proof"].as_str()
-                .ok_or_else(|| anyhow!("Missing 'proof' field in proof file"))?)
+            let proof_bytes = base64
+                .decode(
+                    proof_data["proof"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Missing 'proof' field in proof file"))?,
+                )
                 .context("Failed to decode base64 proof data")?;
             let prover_output = deserialize_prover_output(&proof_bytes)?;
-            
-            let is_valid = proof_system.verify(
-                &prover_output.proof,
-                input_data.as_deref(),
-                output_data.as_deref(),
-            ).map_err(|e| anyhow!("Failed to verify proof: {}", e))?;
+
+            let is_valid = proof_system
+                .verify(
+                    &prover_output.proof,
+                    input_data.as_deref(),
+                    output_data.as_deref(),
+                )
+                .map_err(|e| anyhow!("Failed to verify proof: {}", e))?;
 
             if is_valid {
                 println!("✅ Proof verification successful!");
@@ -338,9 +376,11 @@ fn main() -> Result<()> {
         }
         Commands::ShowProof { proof } => {
             // Load and parse proof file
-            let proof_data: Value = serde_json::from_str(&fs::read_to_string(proof)
-                .with_context(|| format!("Failed to read proof file {:?}", proof))?)
-                .context("Failed to parse proof data as JSON")?;
+            let proof_data: Value = serde_json::from_str(
+                &fs::read_to_string(proof)
+                    .with_context(|| format!("Failed to read proof file {:?}", proof))?,
+            )
+            .context("Failed to parse proof data as JSON")?;
 
             // Create a table to display proof details
             let mut table = Table::new();

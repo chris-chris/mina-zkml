@@ -31,7 +31,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Generate output and proof
     println!("Generating output and proof...");
     let prover_output = proof_system.prove(&input)?;
-    let output = prover_output.output.as_ref().expect("Output should be public");
+    let output = prover_output
+        .output
+        .as_ref()
+        .expect("Output should be public");
     println!("Model output: {:?}", output);
 
     // 5. Create modified output (simulating malicious behavior)
@@ -40,11 +43,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 6. Try to verify with modified output (should fail)
     println!("Verifying proof with modified output...");
-    let is_valid = proof_system.verify(
-        &prover_output.proof,
-        Some(&input),
-        Some(&modified_output),
-    )?;
+    let is_valid =
+        proof_system.verify(&prover_output.proof, Some(&input), Some(&modified_output))?;
 
     println!("\nResults:");
     println!("Model execution successful: ✓");

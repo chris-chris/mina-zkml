@@ -7,28 +7,22 @@ use std::collections::HashMap;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test all visibility scenarios
     println!("\n=== Testing Public Model + Public Data ===");
-    test_scenario(
-        VarVisibility {
-            input: Visibility::Public,
-            output: Visibility::Public,
-        },
-    )?;
+    test_scenario(VarVisibility {
+        input: Visibility::Public,
+        output: Visibility::Public,
+    })?;
 
     println!("\n=== Testing Private Model + Public Data ===");
-    test_scenario(
-        VarVisibility {
-            input: Visibility::Public,
-            output: Visibility::Private,
-        },
-    )?;
+    test_scenario(VarVisibility {
+        input: Visibility::Public,
+        output: Visibility::Private,
+    })?;
 
     println!("\n=== Testing Public Model + Private Data ===");
-    test_scenario(
-        VarVisibility {
-            input: Visibility::Private,
-            output: Visibility::Public,
-        },
-    )?;
+    test_scenario(VarVisibility {
+        input: Visibility::Private,
+        output: Visibility::Public,
+    })?;
 
     Ok(())
 }
@@ -55,7 +49,7 @@ fn test_scenario(visibility: VarVisibility) -> Result<(), Box<dyn std::error::Er
     // 4. Generate output and proof
     println!("Generating output and proof...");
     let prover_output = proof_system.prove(&input)?;
-    
+
     // Print output if public
     if let Some(output) = &prover_output.output {
         println!("Model output (public): {:?}", output);
@@ -70,18 +64,15 @@ fn test_scenario(visibility: VarVisibility) -> Result<(), Box<dyn std::error::Er
     } else {
         None
     };
-    
+
     let output_for_verify = if visibility.output == Visibility::Public {
         prover_output.output.as_deref()
     } else {
         None
     };
 
-    let is_valid = proof_system.verify(
-        &prover_output.proof,
-        input_for_verify,
-        output_for_verify,
-    )?;
+    let is_valid =
+        proof_system.verify(&prover_output.proof, input_for_verify, output_for_verify)?;
 
     println!("\nResults:");
     println!("Model execution successful: ✓");

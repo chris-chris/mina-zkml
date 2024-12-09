@@ -1,5 +1,6 @@
-use mina_zkml::{
-    graph::{model::{Model, RunArgs, VarVisibility, Visibility}, errors::GraphError},
+use mina_zkml::graph::{
+    errors::GraphError,
+    model::{Model, RunArgs, VarVisibility, Visibility},
 };
 use std::collections::HashMap;
 
@@ -8,9 +9,7 @@ fn main() -> Result<(), GraphError> {
     let mut variables = HashMap::new();
     variables.insert("batch_size".to_string(), 1);
 
-    let run_args = RunArgs {
-        variables,
-    };
+    let run_args = RunArgs { variables };
 
     // Set all variables as private for ZK inference
     let visibility = VarVisibility {

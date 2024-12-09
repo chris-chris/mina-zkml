@@ -10,7 +10,7 @@ fn test_table_command() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("table")
         .arg("-m")
         .arg("models/simple_perceptron.onnx");
-    
+
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Operator"))
@@ -45,12 +45,10 @@ fn test_convert_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_proof_command() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempdir()?;
-    
+
     // Create test input file
     let input_path = temp_dir.path().join("input.json");
-    let input_data = json!([
-        [1.0, 0.5, -0.3, 0.8, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]
-    ]);
+    let input_data = json!([[1.0, 0.5, -0.3, 0.8, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]]);
     fs::write(&input_path, input_data.to_string())?;
 
     // Create output path for proof
@@ -74,7 +72,7 @@ fn test_proof_command() -> Result<(), Box<dyn std::error::Error>> {
     // Verify the proof file exists and contains valid JSON
     let content = fs::read_to_string(&output_path)?;
     let json: Value = serde_json::from_str(&content)?;
-    
+
     // Check required fields
     assert!(json["metadata"].is_object());
     assert!(json["metadata"]["model"].is_string());
@@ -89,12 +87,10 @@ fn test_proof_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_verify_command() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempdir()?;
-    
+
     // Create test input file
     let input_path = temp_dir.path().join("input.json");
-    let input_data = json!([
-        [1.0, 0.5, -0.3, 0.8, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]
-    ]);
+    let input_data = json!([[1.0, 0.5, -0.3, 0.8, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]]);
     fs::write(&input_path, input_data.to_string())?;
 
     // Generate proof first
@@ -116,7 +112,7 @@ fn test_verify_command() -> Result<(), Box<dyn std::error::Error>> {
     // Read the proof file to get the output
     let proof_content = fs::read_to_string(&proof_path)?;
     let proof_json: Value = serde_json::from_str(&proof_content)?;
-    
+
     // Create output file with the model's output
     let output_path = temp_dir.path().join("output.json");
     if let Some(output) = proof_json["output"].as_array() {
@@ -151,12 +147,10 @@ fn test_verify_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_show_proof_command() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempdir()?;
-    
+
     // Create test input file
     let input_path = temp_dir.path().join("input.json");
-    let input_data = json!([
-        [1.0, 0.5, -0.3, 0.8, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]
-    ]);
+    let input_data = json!([[1.0, 0.5, -0.3, 0.8, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]]);
     fs::write(&input_path, input_data.to_string())?;
 
     // Generate proof first
@@ -177,9 +171,7 @@ fn test_show_proof_command() -> Result<(), Box<dyn std::error::Error>> {
 
     // Now show the proof details
     let mut cmd = Command::cargo_bin("mina-zkml-cli")?;
-    cmd.arg("show-proof")
-        .arg("-p")
-        .arg(&proof_path);
+    cmd.arg("show-proof").arg("-p").arg(&proof_path);
 
     cmd.assert()
         .success()
@@ -193,7 +185,7 @@ fn test_show_proof_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_invalid_input_json() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempdir()?;
-    
+
     // Create invalid input file (not an array of arrays)
     let input_path = temp_dir.path().join("invalid_input.json");
     let invalid_input = json!({ "data": [1.0, 2.0] });
@@ -214,9 +206,9 @@ fn test_invalid_input_json() -> Result<(), Box<dyn std::error::Error>> {
         .arg("--output-visibility")
         .arg("public");
 
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Input JSON must be an array of arrays"));
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Input JSON must be an array of arrays",
+    ));
 
     Ok(())
 }
@@ -224,7 +216,7 @@ fn test_invalid_input_json() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_invalid_visibility() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempdir()?;
-    
+
     let input_path = temp_dir.path().join("input.json");
     let input_data = json!([[1.0, 2.0]]);
     fs::write(&input_path, input_data.to_string())?;
@@ -240,7 +232,7 @@ fn test_invalid_visibility() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-o")
         .arg(&output_path)
         .arg("--input-visibility")
-        .arg("invalid")  // Invalid visibility value
+        .arg("invalid") // Invalid visibility value
         .arg("--output-visibility")
         .arg("public");
 

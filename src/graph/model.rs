@@ -33,16 +33,6 @@ pub enum OperationType {
     Reshape,
 }
 
-impl Default for ParsedNodes {
-    fn default() -> Self {
-        ParsedNodes {
-            nodes: BTreeMap::new(),
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-        }
-    }
-}
-
 /// Serializable version of OutletId
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SerializableOutletId {
@@ -93,7 +83,7 @@ pub enum NodeType {
 }
 
 /// Represents the parsed neural network graph structure
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ParsedNodes {
     /// Map of node indices to their corresponding node types
     pub nodes: BTreeMap<usize, NodeType>,

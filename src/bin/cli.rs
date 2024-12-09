@@ -4,7 +4,6 @@ use clap::{Parser, Subcommand};
 use mina_zkml::{
     graph::model::{Model, RunArgs, VarVisibility, Visibility},
     zk::proof::{ProofSystem, ProverOutput},
-    zk::ZkOpeningProof,
 };
 use prettytable::{row, Table};
 use serde_json::{self, json, Value};
@@ -161,7 +160,7 @@ fn main() -> Result<()> {
             )
             .with_context(|| format!("Failed to load model from {:?}", model))?;
 
-            for (_, node_type) in &model.graph.nodes {
+            for node_type in model.graph.nodes.values() {
                 if let mina_zkml::graph::model::NodeType::Node(node) = node_type {
                     let op_type = format!("{:?}", node.op_type);
 
@@ -316,7 +315,7 @@ fn main() -> Result<()> {
             let input_data = if visibility.input == Visibility::Public {
                 if let Some(input_path) = input {
                     let input_json: Value =
-                        serde_json::from_str(&fs::read_to_string(&input_path).with_context(
+                        serde_json::from_str(&fs::read_to_string(input_path).with_context(
                             || format!("Failed to read input file {:?}", input_path),
                         )?)
                         .context("Failed to parse input file as JSON")?;
@@ -332,7 +331,7 @@ fn main() -> Result<()> {
             let output_data = if visibility.output == Visibility::Public {
                 if let Some(output_path) = output {
                     let output_json: Value =
-                        serde_json::from_str(&fs::read_to_string(&output_path).with_context(
+                        serde_json::from_str(&fs::read_to_string(output_path).with_context(
                             || format!("Failed to read output file {:?}", output_path),
                         )?)
                         .context("Failed to parse output file as JSON")?;

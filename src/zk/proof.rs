@@ -14,27 +14,32 @@ use mina_poseidon::{
 };
 use poly_commitment::{commitment::CommitmentCurve, ipa::SRS, SRS as _};
 use rand::{rngs::ThreadRng, thread_rng};
+use serde::{Serialize, Deserialize};
 use std::{array, sync::Arc};
 
 use super::wiring::ModelCircuitBuilder;
 use super::ZkOpeningProof;
-use crate::graph::model::Model;
+use crate::graph::model::{Model, Visibility};
 
 type SpongeParams = PlonkSpongeConstantsKimchi;
 type BaseSponge = DefaultFqSponge<VestaParameters, SpongeParams>;
 type ScalarSponge = DefaultFrSponge<Fp, SpongeParams>;
 
-/// Result type containing model output and its proof
-#[derive(Clone)]
+/// Result type containing model output (if public) and its proof
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ProverOutput {
-    pub output: Vec<Vec<f32>>,
+    pub output: Option<Vec<Vec<f32>>>, // Only Some if output visibility is Public
     pub proof: ProverProof<Vesta, ZkOpeningProof>,
+    pub prover_index: ProverIndex<Vesta, ZkOpeningProof>,
+    pub verifier_index: VerifierIndex<Vesta, ZkOpeningProof>,
 }
 
 /// Creates prover and verifier indices for a model
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ProofSystem {
     pub prover_index: ProverIndex<Vesta, ZkOpeningProof>,
     pub verifier_index: VerifierIndex<Vesta, ZkOpeningProof>,
+    #[serde(skip)]
     model: Model,
     domain_size: usize,
     zk_rows: usize,
@@ -49,34 +54,32 @@ impl ProofSystem {
         let mut builder = ModelCircuitBuilder::new();
         let (gates, domain_size, zk_rows) = builder.build_circuit(model);
 
-        // Calculate total number of public inputs and outputs
-        let num_public_inputs = model
-            .graph
-            .inputs
-            .iter()
-            .map(|&idx| {
+        // Calculate total number of public inputs and outputs based on visibility
+        let num_public_inputs = if model.visibility.input == Visibility::Public {
+            model.graph.inputs.iter().map(|&idx| {
                 if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&idx] {
                     node.out_dims.iter().product::<usize>()
                 } else {
                     0usize
                 }
-            })
-            .sum::<usize>();
+            }).sum::<usize>()
+        } else {
+            0
+        };
 
-        let num_public_outputs = model
-            .graph
-            .outputs
-            .iter()
-            .map(|&(node, _)| {
+        let num_public_outputs = if model.visibility.output == Visibility::Public {
+            model.graph.outputs.iter().map(|&(node, _)| {
                 if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&node] {
                     node.out_dims.iter().product::<usize>()
                 } else {
                     0usize
                 }
-            })
-            .sum::<usize>();
+            }).sum::<usize>()
+        } else {
+            0
+        };
 
-        let total_public = num_public_outputs; // Only outputs are public
+        let total_public = num_public_inputs + num_public_outputs;
 
         println!("Number of public inputs: {}", num_public_inputs);
         println!("Number of public outputs: {}", num_public_outputs);
@@ -84,7 +87,7 @@ impl ProofSystem {
 
         // Create constraint system with our domain size
         let cs = ConstraintSystem::create(gates)
-            .public(total_public) // Only outputs are public
+            .public(total_public)
             .max_poly_size(Some(domain_size))
             .build()
             .expect("Failed to create constraint system");
@@ -131,14 +134,45 @@ impl ProofSystem {
 
         // Calculate initial witness size (without padding)
         let mut witness_size = 0;
+        let mut current_pos = 0;
 
-        let public_outputs: Vec<Fp> = outputs
-            .iter()
-            .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x)))
-            .collect();
+        // Convert inputs to field elements if public
+        let mut witness = array::from_fn(|_| vec![Fp::zero(); self.domain_size]);
+        
+        if self.model.visibility.input == Visibility::Public {
+            let public_inputs: Vec<Fp> = inputs
+                .iter()
+                .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x)))
+                .collect();
+            
+            witness_size += public_inputs.len();
+            
+            // Place public inputs at the start
+            for (i, &value) in public_inputs.iter().enumerate() {
+                for item in witness.iter_mut().take(COLUMNS) {
+                    item[i] = value;
+                }
+            }
+            current_pos += public_inputs.len();
+        }
 
-        // Total public values is outputs only
-        witness_size += public_outputs.len();
+        // Convert outputs to field elements if public
+        if self.model.visibility.output == Visibility::Public {
+            let public_outputs: Vec<Fp> = outputs
+                .iter()
+                .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x)))
+                .collect();
+            
+            witness_size += public_outputs.len();
+            
+            // Place public outputs after inputs
+            for (i, &value) in public_outputs.iter().enumerate() {
+                for item in witness.iter_mut().take(COLUMNS) {
+                    item[current_pos + i] = value;
+                }
+            }
+            current_pos += public_outputs.len();
+        }
 
         // Add space for intermediate computations
         for node in self.model.graph.nodes.values() {
@@ -167,18 +201,7 @@ impl ProofSystem {
             self.zk_rows
         );
 
-        // Create witness arrays
-        let mut witness = array::from_fn(|_| vec![Fp::zero(); self.domain_size]);
-
-        // Place public outputs at the start
-        for (i, &value) in public_outputs.iter().enumerate() {
-            for item in witness.iter_mut().take(COLUMNS) {
-                item[i] = value;
-            }
-        }
-
-        // Process each node in topological order starting after public values
-        let mut current_row = public_outputs.len();
+        // Process each node in topological order
         let mut intermediate_values = std::collections::HashMap::new();
 
         for (idx, node) in &self.model.graph.nodes {
@@ -208,11 +231,11 @@ impl ProofSystem {
                                 }
                                 // Set the result in all columns
                                 for item in witness.iter_mut().take(COLUMNS) {
-                                    item[current_row + i] = sum;
+                                    item[current_pos + i] = sum;
                                 }
                             }
-                            intermediate_values.insert(*idx, current_row);
-                            current_row += output_size;
+                            intermediate_values.insert(*idx, current_pos);
+                            current_pos += output_size;
                         }
                     }
                     crate::graph::model::OperationType::Add => {
@@ -229,11 +252,11 @@ impl ProofSystem {
                                         witness[0][left_row + i] + witness[0][right_row + i];
                                     // Set the result in all columns
                                     for item in witness.iter_mut().take(COLUMNS) {
-                                        item[current_row + i] = result;
+                                        item[current_pos + i] = result;
                                     }
                                 }
-                                intermediate_values.insert(*idx, current_row);
-                                current_row += size;
+                                intermediate_values.insert(*idx, current_pos);
+                                current_pos += size;
                             }
                         }
                     }
@@ -247,11 +270,11 @@ impl ProofSystem {
                                     let result = if x == Fp::zero() { Fp::zero() } else { x };
                                     // Set the result in all columns
                                     for item in witness.iter_mut().take(COLUMNS) {
-                                        item[current_row + i] = result;
+                                        item[current_pos + i] = result;
                                     }
                                 }
-                                intermediate_values.insert(*idx, current_row);
-                                current_row += size;
+                                intermediate_values.insert(*idx, current_pos);
+                                current_pos += size;
                             }
                         }
                     }
@@ -277,7 +300,7 @@ impl ProofSystem {
             for i in item
                 .iter_mut()
                 .take(self.domain_size - self.zk_rows)
-                .skip(current_row)
+                .skip(current_pos)
             {
                 *i = Fp::zero();
             }
@@ -306,29 +329,56 @@ impl ProofSystem {
         .map_err(|e| format!("Failed to create proof: {:?}", e))?;
 
         Ok(ProverOutput {
-            output: outputs,
+            output: if self.model.visibility.output == Visibility::Public {
+                Some(outputs)
+            } else {
+                None
+            },
             proof,
+            prover_index: self.prover_index.clone(),
+            verifier_index: self.verifier_index.clone(),
         })
     }
 
-    /// Verify a proof given output and proof
+    /// Verify a proof
     pub fn verify(
         &self,
-        output: &[Vec<f32>],
         proof: &ProverProof<Vesta, ZkOpeningProof>,
+        public_inputs: Option<&[Vec<f32>]>,
+        public_outputs: Option<&[Vec<f32>]>,
     ) -> Result<bool, String> {
-        // Convert output to field elements
-        let public_values: Vec<Fp> = output
-            .iter()
-            .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x)))
-            .collect();
+        let mut public_values = Vec::new();
 
-        println!("Verifying proof with {} output values", public_values.len());
+        // Add public inputs if provided and input visibility is public
+        if self.model.visibility.input == Visibility::Public {
+            if let Some(inputs) = public_inputs {
+                public_values.extend(
+                    inputs
+                        .iter()
+                        .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x))),
+                );
+            } else {
+                return Err("Public inputs required for verification".to_string());
+            }
+        }
+
+        // Add public outputs if provided and output visibility is public
+        if self.model.visibility.output == Visibility::Public {
+            if let Some(outputs) = public_outputs {
+                public_values.extend(
+                    outputs
+                        .iter()
+                        .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x))),
+                );
+            } else {
+                return Err("Public outputs required for verification".to_string());
+            }
+        }
 
         // Setup group map
         let group_map = <Vesta as CommitmentCurve>::Map::setup();
 
-        // Verify proof with outputs only
+        // Verify proof
         kimchi::verifier::verify::<Vesta, BaseSponge, ScalarSponge, ZkOpeningProof>(
             &group_map,
             &self.verifier_index,
@@ -343,12 +393,12 @@ impl ProofSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::model::{RunArgs, VarVisibility, Visibility};
+    use crate::graph::model::{RunArgs, VarVisibility};
     use std::collections::HashMap;
 
     #[test]
-    fn test_proof_system() {
-        // Create a simple model (perceptron)
+    fn test_proof_system_public() {
+        // Create a simple model (perceptron) with public visibility
         let mut variables = HashMap::new();
         variables.insert("batch_size".to_string(), 1);
         let run_args = RunArgs { variables };
@@ -364,18 +414,55 @@ mod tests {
         // Create proof system
         let proof_system = ProofSystem::new(&model);
 
-        // Create sample input - pad to match expected size [1, 10]
+        // Create sample input
         let input = vec![vec![
-            1.0, 0.5, -0.3, 0.8, -0.2, // Original values
-            0.0, 0.0, 0.0, 0.0, 0.0, // Padding to reach size 10
+            1.0, 0.5, -0.3, 0.8, -0.2,
+            0.0, 0.0, 0.0, 0.0, 0.0,
         ]];
 
         // Generate output and proof
         let prover_output = proof_system.prove(&input).expect("Failed to create proof");
+        let outputs = prover_output.output.expect("Output should be public");
 
-        // Verify the proof with just output and proof
+        // Verify the proof
         let result = proof_system
-            .verify(&prover_output.output, &prover_output.proof)
+            .verify(&prover_output.proof, Some(&input), Some(&outputs))
+            .expect("Failed to verify proof");
+
+        assert!(result);
+    }
+
+    #[test]
+    fn test_proof_system_private() {
+        // Create a model with private input/output
+        let mut variables = HashMap::new();
+        variables.insert("batch_size".to_string(), 1);
+        let run_args = RunArgs { variables };
+
+        let visibility = VarVisibility {
+            input: Visibility::Private,
+            output: Visibility::Private,
+        };
+
+        let model = Model::new("models/simple_perceptron.onnx", &run_args, &visibility)
+            .expect("Failed to load model");
+
+        // Create proof system
+        let proof_system = ProofSystem::new(&model);
+
+        // Create sample input
+        let input = vec![vec![
+            1.0, 0.5, -0.3, 0.8, -0.2,
+            0.0, 0.0, 0.0, 0.0, 0.0,
+        ]];
+
+        // Generate proof
+        let prover_output = proof_system.prove(&input).expect("Failed to create proof");
+        assert!(prover_output.output.is_none(), "Output should be private");
+
+        // Verify the proof without public values
+        let result = proof_system
+            .verify(&prover_output.proof, None, None)
             .expect("Failed to verify proof");
 
         assert!(result);

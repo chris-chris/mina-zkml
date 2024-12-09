@@ -91,11 +91,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generate output and proof for first image
     let prover_output1 = proof_system.prove(&input_vec1)?;
+    let output1 = prover_output1
+        .output
+        .as_ref()
+        .expect("Output should be public");
     println!("First image prediction:");
-    print_prediction_info(&prover_output1.output[0]);
+    print_prediction_info(&output1[0]);
 
     // Verify proof for first image
-    let is_valid1 = proof_system.verify(&prover_output1.output, &prover_output1.proof)?;
+    let is_valid1 = proof_system.verify(&prover_output1.proof, Some(&input_vec1), Some(output1))?;
     println!(
         "Verification result: {}",
         if is_valid1 {
@@ -112,11 +116,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generate output and proof for second image
     let prover_output2 = proof_system.prove(&input_vec2)?;
+    let output2 = prover_output2
+        .output
+        .as_ref()
+        .expect("Output should be public");
     println!("Second image prediction:");
-    print_prediction_info(&prover_output2.output[0]);
+    print_prediction_info(&output2[0]);
 
     // Verify proof for second image
-    let is_valid2 = proof_system.verify(&prover_output2.output, &prover_output2.proof)?;
+    let is_valid2 = proof_system.verify(&prover_output2.proof, Some(&input_vec2), Some(output2))?;
     println!(
         "Verification result: {}",
         if is_valid2 {
@@ -128,7 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n=== Test Case 3: Invalid Proof - Completely Wrong Outputs ===");
     // Create fake output with opposite predictions
-    let mut fake_output1 = prover_output1.output.clone();
+    let mut fake_output1 = output1.clone();
     for i in 0..10 {
         fake_output1[0][i] = -fake_output1[0][i]; // Invert all logits
     }
@@ -136,7 +144,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_prediction_info(&fake_output1[0]);
 
     // Try to verify with wrong outputs
-    let is_valid3 = proof_system.verify(&fake_output1, &prover_output1.proof)?;
+    let is_valid3 = proof_system.verify(
+        &prover_output1.proof,
+        Some(&input_vec1),
+        Some(&fake_output1),
+    )?;
     println!(
         "Verification result: {}",
         if is_valid3 {
@@ -148,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n=== Test Case 4: Invalid Proof - Slightly Modified Outputs ===");
     // Create fake output with small perturbations
-    let mut fake_output2 = prover_output2.output.clone();
+    let mut fake_output2 = output2.clone();
     for i in 0..10 {
         fake_output2[0][i] += 0.1; // Add small perturbation to each logit
     }
@@ -156,7 +168,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_prediction_info(&fake_output2[0]);
 
     // Try to verify with slightly modified outputs
-    let is_valid4 = proof_system.verify(&fake_output2, &prover_output2.proof)?;
+    let is_valid4 = proof_system.verify(
+        &prover_output2.proof,
+        Some(&input_vec2),
+        Some(&fake_output2),
+    )?;
     println!(
         "Verification result: {}",
         if is_valid4 {

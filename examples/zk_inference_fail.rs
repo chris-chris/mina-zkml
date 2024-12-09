@@ -31,15 +31,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Generate output and proof
     println!("Generating output and proof...");
     let prover_output = proof_system.prove(&input)?;
-    println!("Model output: {:?}", prover_output.output);
+    let output = prover_output
+        .output
+        .as_ref()
+        .expect("Output should be public");
+    println!("Model output: {:?}", output);
 
     // 5. Create modified output (simulating malicious behavior)
-    let mut modified_output = prover_output.output.clone();
+    let mut modified_output = output.clone();
     modified_output[0][0] += 1.0; // Modify first output value
 
     // 6. Try to verify with modified output (should fail)
     println!("Verifying proof with modified output...");
-    let is_valid = proof_system.verify(&modified_output, &prover_output.proof)?;
+    let is_valid =
+        proof_system.verify(&prover_output.proof, Some(&input), Some(&modified_output))?;
 
     println!("\nResults:");
     println!("Model execution successful: ✓");

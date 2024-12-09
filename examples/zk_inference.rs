@@ -5,16 +5,34 @@ use mina_zkml::{
 use std::collections::HashMap;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Test all visibility scenarios
+    println!("\n=== Testing Public Model + Public Data ===");
+    test_scenario(VarVisibility {
+        input: Visibility::Public,
+        output: Visibility::Public,
+    })?;
+
+    println!("\n=== Testing Private Model + Public Data ===");
+    test_scenario(VarVisibility {
+        input: Visibility::Public,
+        output: Visibility::Private,
+    })?;
+
+    println!("\n=== Testing Public Model + Private Data ===");
+    test_scenario(VarVisibility {
+        input: Visibility::Private,
+        output: Visibility::Public,
+    })?;
+
+    Ok(())
+}
+
+fn test_scenario(visibility: VarVisibility) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Load the model
     println!("Loading model...");
     let mut variables = HashMap::new();
     variables.insert("batch_size".to_string(), 1);
     let run_args = RunArgs { variables };
-
-    let visibility = VarVisibility {
-        input: Visibility::Public,
-        output: Visibility::Public,
-    };
 
     let model = Model::new("models/simple_perceptron.onnx", &run_args, &visibility)?;
 
@@ -31,11 +49,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Generate output and proof
     println!("Generating output and proof...");
     let prover_output = proof_system.prove(&input)?;
-    println!("Model output: {:?}", prover_output.output);
 
-    // 5. Verify the proof with output and proof
+    // Print output if public
+    if let Some(output) = &prover_output.output {
+        println!("Model output (public): {:?}", output);
+    } else {
+        println!("Model output is private");
+    }
+
+    // 5. Verify the proof
     println!("Verifying proof...");
-    let is_valid = proof_system.verify(&prover_output.output, &prover_output.proof)?;
+    let input_for_verify = if visibility.input == Visibility::Public {
+        Some(&input[..])
+    } else {
+        None
+    };
+
+    let output_for_verify = if visibility.output == Visibility::Public {
+        prover_output.output.as_deref()
+    } else {
+        None
+    };
+
+    let is_valid =
+        proof_system.verify(&prover_output.proof, input_for_verify, output_for_verify)?;
 
     println!("\nResults:");
     println!("Model execution successful: ✓");
@@ -45,20 +82,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if is_valid { "✓ Valid" } else { "✗ Invalid" }
     );
 
-    // 6. Demonstrate invalid verification with modified output
-    println!("\nTesting invalid case with modified output...");
-    let mut modified_output = prover_output.output.clone();
-    modified_output[0][0] += 1.0; // Modify first output value
+    // 6. Test invalid case only for public output
+    if visibility.output == Visibility::Public {
+        println!("\nTesting invalid case with modified output...");
+        if let Some(output) = prover_output.output {
+            let mut modified_output = output.clone();
+            modified_output[0][0] += 1.0; // Modify first output value
 
-    let is_valid_modified = proof_system.verify(&modified_output, &prover_output.proof)?;
-    println!(
-        "Modified output verification: {}",
-        if !is_valid_modified {
-            "✗ Invalid (Expected)"
-        } else {
-            "✓ Valid (Unexpected!)"
+            let is_valid_modified = proof_system.verify(
+                &prover_output.proof,
+                input_for_verify,
+                Some(&modified_output),
+            )?;
+
+            println!(
+                "Modified output verification: {}",
+                if !is_valid_modified {
+                    "✗ Invalid (Expected)"
+                } else {
+                    "✓ Valid (Unexpected!)"
+                }
+            );
         }
-    );
+    }
 
     Ok(())
 }

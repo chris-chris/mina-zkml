@@ -4,7 +4,7 @@ use crate::graph::{
         Model, NodeType, OperationType, ParsedNodes, SerializableNode, VarVisibility, Visibility,
     },
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn test_matrix_dimension_mismatch() {
@@ -19,6 +19,7 @@ fn test_matrix_dimension_mismatch() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node1));
 
@@ -30,6 +31,7 @@ fn test_matrix_dimension_mismatch() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(input_node2));
 
@@ -42,6 +44,7 @@ fn test_matrix_dimension_mismatch() {
         op_type: OperationType::MatMul,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(2, NodeType::Node(matmul_node));
 
@@ -79,6 +82,7 @@ fn test_relu_edge_cases() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
 
@@ -91,6 +95,7 @@ fn test_relu_edge_cases() {
         op_type: OperationType::Relu,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(relu_node));
 
@@ -137,6 +142,7 @@ fn test_sigmoid_edge_cases() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
 
@@ -149,6 +155,7 @@ fn test_sigmoid_edge_cases() {
         op_type: OperationType::Sigmoid,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(sigmoid_node));
 
@@ -221,6 +228,7 @@ fn test_reshape_edge_cases() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
 
@@ -233,6 +241,7 @@ fn test_reshape_edge_cases() {
         op_type: OperationType::Reshape,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(reshape_node));
 

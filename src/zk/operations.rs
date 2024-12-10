@@ -210,6 +210,7 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_matmul_gate_generation() {
@@ -246,6 +247,7 @@ mod tests {
             id: 0,
             weights: None,
             bias: None,
+            attributes: HashMap::new(),
         };
         match identify_operation(&matmul_node) {
             Some(OnnxOperation::MatMul { m, n, k }) => {
@@ -265,6 +267,7 @@ mod tests {
             id: 0,
             weights: None,
             bias: None,
+            attributes: HashMap::new(),
         };
         match identify_operation(&relu_node) {
             Some(OnnxOperation::Relu) => (),
@@ -280,6 +283,7 @@ mod tests {
             id: 0,
             weights: None,
             bias: None,
+            attributes: HashMap::new(),
         };
         match identify_operation(&sigmoid_node) {
             Some(OnnxOperation::Sigmoid) => (),
@@ -295,6 +299,7 @@ mod tests {
             id: 0,
             weights: None,
             bias: None,
+            attributes: HashMap::new(),
         };
         assert!(identify_operation(&input_node).is_none());
 
@@ -307,6 +312,7 @@ mod tests {
             id: 0,
             weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
             bias: None,
+            attributes: HashMap::new(),
         };
         match identify_operation(&const_node) {
             Some(OnnxOperation::Const) => (),

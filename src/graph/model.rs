@@ -9,6 +9,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
 };
+use tract_onnx::tract_core::ops::cnn::{Conv, KernelFormat, PaddingSpec};
 use tract_onnx::{prelude::*, tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
 use crate::zk::operations::identify_tract_operation;
@@ -503,8 +504,12 @@ pub struct SerializableNode {
     pub id: usize,
     /// Operation type
     pub op_type: OperationType,
+    /// Weights
     pub weights: Option<Vec<f32>>,
+    /// Bias
     pub bias: Option<Vec<f32>>,
+    /// Attributes for the operations
+    pub attributes: HashMap<String, Vec<usize>>,
 }
 
 impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
@@ -545,6 +550,50 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
             _ => (None, None),
         };
 
+        // Extract convolution attributes
+        let mut attributes = HashMap::new();
+        if let Some(conv_op) = node.op.downcast_ref::<Conv>() {
+            let pool_spec = &conv_op.pool_spec;
+
+            println!("pool_spec: {:?} ", pool_spec);
+            // Kernel shape
+            attributes.insert(
+                "kernel_shape".to_string(),
+                pool_spec.kernel_shape.clone().into_iter().collect(),
+            );
+
+            // Strides
+            if let Some(strides) = &pool_spec.strides {
+                attributes.insert("strides".to_string(), strides.clone().into_iter().collect());
+            }
+
+            // Dilations
+            if let Some(dilations) = &pool_spec.dilations {
+                attributes.insert(
+                    "dilations".to_string(),
+                    dilations.clone().into_iter().collect(),
+                );
+            }
+
+            // Padding
+            if let PaddingSpec::Explicit(before, after) = &pool_spec.padding {
+                let mut pads = before.clone();
+                pads.extend(after.iter().cloned());
+                println!("pool_spec: {:?} ", pads);
+                attributes.insert("pads".to_string(), pads.into_vec());
+            }
+
+            // Kernel format
+            attributes.insert(
+                "kernel_format".to_string(),
+                vec![match conv_op.kernel_fmt {
+                    KernelFormat::OIHW => 0,
+                    KernelFormat::HWIO => 1,
+                    KernelFormat::OHWI => 2,
+                }],
+            );
+        }
+
         SerializableNode {
             inputs: node.inputs.iter().map(|o| (o.node, o.slot)).collect(),
             out_dims: node.outputs[0]
@@ -562,6 +611,7 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
             op_type,
             weights,
             bias,
+            attributes,
         }
     }
 }

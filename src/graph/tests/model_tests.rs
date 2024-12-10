@@ -4,7 +4,7 @@ use crate::graph::{
         Model, NodeType, OperationType, ParsedNodes, SerializableNode, VarVisibility, Visibility,
     },
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn test_matmul_operation() {
@@ -19,6 +19,7 @@ fn test_matmul_operation() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node1));
 
@@ -30,6 +31,7 @@ fn test_matmul_operation() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(input_node2));
 
@@ -42,6 +44,7 @@ fn test_matmul_operation() {
         op_type: OperationType::MatMul,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(2, NodeType::Node(matmul_node));
 
@@ -95,6 +98,7 @@ fn test_relu_operation() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
 
@@ -107,6 +111,7 @@ fn test_relu_operation() {
         op_type: OperationType::Relu,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(relu_node));
 
@@ -146,6 +151,7 @@ fn test_sigmoid_operation() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
 
@@ -158,6 +164,7 @@ fn test_sigmoid_operation() {
         op_type: OperationType::Sigmoid,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(sigmoid_node));
 
@@ -205,6 +212,7 @@ fn test_add_operation() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node1));
 
@@ -216,6 +224,7 @@ fn test_add_operation() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(input_node2));
 
@@ -228,6 +237,7 @@ fn test_add_operation() {
         op_type: OperationType::Add,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(2, NodeType::Node(add_node));
 
@@ -271,6 +281,7 @@ fn test_einsum_operation() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node1));
 
@@ -282,6 +293,7 @@ fn test_einsum_operation() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(input_node2));
 
@@ -294,6 +306,7 @@ fn test_einsum_operation() {
         op_type: OperationType::EinSum,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(2, NodeType::Node(einsum_node));
 
@@ -333,6 +346,7 @@ fn test_reshape_operation() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
 
@@ -345,6 +359,7 @@ fn test_reshape_operation() {
         op_type: OperationType::Reshape,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(reshape_node));
 
@@ -381,6 +396,7 @@ fn test_const_operation() {
         op_type: OperationType::Const,
         weights: Some(vec![1.0, 2.0, 3.0]),
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(const_node));
 
@@ -416,6 +432,7 @@ fn test_cyclic_dependency() {
         op_type: OperationType::Add,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(node0));
 
@@ -427,6 +444,7 @@ fn test_cyclic_dependency() {
         op_type: OperationType::Add,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(node1));
 
@@ -438,6 +456,7 @@ fn test_cyclic_dependency() {
         op_type: OperationType::Add,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(2, NodeType::Node(node2));
 
@@ -465,6 +484,7 @@ fn test_invalid_output_slot() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
 
@@ -499,6 +519,7 @@ fn test_missing_node() {
         op_type: OperationType::Input,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
 
@@ -511,6 +532,7 @@ fn test_missing_node() {
         op_type: OperationType::Add,
         weights: None,
         bias: None,
+        attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(add_node));
 

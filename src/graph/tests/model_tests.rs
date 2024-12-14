@@ -17,8 +17,7 @@ fn test_matmul_operation() {
         out_scale: 1,
         id: 0,
         op_type: OperationType::Input,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node1));
@@ -29,8 +28,7 @@ fn test_matmul_operation() {
         out_scale: 1,
         id: 1,
         op_type: OperationType::Input,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(input_node2));
@@ -42,8 +40,7 @@ fn test_matmul_operation() {
         out_scale: 1,
         id: 2,
         op_type: OperationType::MatMul,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(2, NodeType::Node(matmul_node));
@@ -96,8 +93,7 @@ fn test_relu_operation() {
         out_scale: 1,
         id: 0,
         op_type: OperationType::Input,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
@@ -109,8 +105,7 @@ fn test_relu_operation() {
         out_scale: 1,
         id: 1,
         op_type: OperationType::Relu,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(relu_node));
@@ -149,8 +144,7 @@ fn test_sigmoid_operation() {
         out_scale: 1,
         id: 0,
         op_type: OperationType::Input,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
@@ -162,8 +156,7 @@ fn test_sigmoid_operation() {
         out_scale: 1,
         id: 1,
         op_type: OperationType::Sigmoid,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(sigmoid_node));
@@ -210,8 +203,7 @@ fn test_add_operation() {
         out_scale: 1,
         id: 0,
         op_type: OperationType::Input,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node1));
@@ -222,8 +214,7 @@ fn test_add_operation() {
         out_scale: 1,
         id: 1,
         op_type: OperationType::Input,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(input_node2));
@@ -235,8 +226,7 @@ fn test_add_operation() {
         out_scale: 1,
         id: 2,
         op_type: OperationType::Add,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(2, NodeType::Node(add_node));
@@ -279,8 +269,7 @@ fn test_einsum_operation() {
         out_scale: 1,
         id: 0,
         op_type: OperationType::Input,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node1));
@@ -291,8 +280,7 @@ fn test_einsum_operation() {
         out_scale: 1,
         id: 1,
         op_type: OperationType::Input,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(input_node2));
@@ -304,8 +292,7 @@ fn test_einsum_operation() {
         out_scale: 1,
         id: 2,
         op_type: OperationType::EinSum,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(2, NodeType::Node(einsum_node));
@@ -344,8 +331,7 @@ fn test_reshape_operation() {
         out_scale: 1,
         id: 0,
         op_type: OperationType::Input,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
@@ -357,8 +343,7 @@ fn test_reshape_operation() {
         out_scale: 1,
         id: 1,
         op_type: OperationType::Reshape,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(reshape_node));
@@ -394,8 +379,7 @@ fn test_const_operation() {
         out_scale: 1,
         id: 0,
         op_type: OperationType::Const,
-        weights: Some(vec![1.0, 2.0, 3.0]),
-        bias: None,
+        op_params: Some(vec![1.0, 2.0, 3.0]),
         attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(const_node));
@@ -430,8 +414,7 @@ fn test_cyclic_dependency() {
         out_scale: 1,
         id: 0,
         op_type: OperationType::Add,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(node0));
@@ -442,8 +425,7 @@ fn test_cyclic_dependency() {
         out_scale: 1,
         id: 1,
         op_type: OperationType::Add,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(node1));
@@ -454,8 +436,7 @@ fn test_cyclic_dependency() {
         out_scale: 1,
         id: 2,
         op_type: OperationType::Add,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(2, NodeType::Node(node2));
@@ -482,8 +463,7 @@ fn test_invalid_output_slot() {
         out_scale: 1,
         id: 0,
         op_type: OperationType::Input,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
@@ -517,8 +497,7 @@ fn test_missing_node() {
         out_scale: 1,
         id: 0,
         op_type: OperationType::Input,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(0, NodeType::Node(input_node));
@@ -530,8 +509,7 @@ fn test_missing_node() {
         out_scale: 1,
         id: 1,
         op_type: OperationType::Add,
-        weights: None,
-        bias: None,
+        op_params: None,
         attributes: HashMap::new(),
     };
     nodes.insert(1, NodeType::Node(add_node));

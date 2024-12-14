@@ -30,8 +30,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mina_zkml::graph::model::NodeType::Node(n) => {
                 println!("Node {}: {:?} inputs: {:?}", id, n.op_type, n.inputs);
                 println!("Output dimensions: {:?}", n.out_dims);
-                println!("Weight Tensor: {:?}", n.weights);
-                println!("Bias Tensor: {:?}", n.bias);
+                println!("Weight Tensor: {:?}", n.op_params);
+                // println!("Bias Tensor: {:?}", n.bias);
             }
             mina_zkml::graph::model::NodeType::SubGraph { .. } => {
                 println!("Node {}: SubGraph", id);

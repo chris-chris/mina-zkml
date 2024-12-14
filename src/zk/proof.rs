@@ -232,12 +232,12 @@ impl ProofSystem {
                         };
 
                         // Compute matrix multiplication
-                        if let Some(weights) = &node.weights {
+                        if let Some(op_params) = &node.op_params {
                             for i in 0..output_size {
                                 let mut sum = Fp::zero();
                                 for j in 0..input_size {
-                                    let weight = Self::f32_to_field(weights[i * input_size + j]);
-                                    sum += weight * input_values[j];
+                                    let param = Self::f32_to_field(op_params[i * input_size + j]);
+                                    sum += param * input_values[j];
                                 }
                                 // Set the result in all columns
                                 for item in witness.iter_mut().take(COLUMNS) {

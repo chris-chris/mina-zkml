@@ -32,6 +32,7 @@ pub enum OperationType {
     Const,
     RmAxis,
     Reshape,
+    Conv,
 }
 
 /// Serializable version of OutletId
@@ -100,16 +101,16 @@ impl ParsedNodes {
         self.inputs.len()
     }
 
-    pub fn log_weights_and_biases(&self) -> Result<(), GraphError> {
+    pub fn log_op_params_and_biases(&self) -> Result<(), GraphError> {
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open("weights_biases_log.txt")
+            .open("op_params_biases_log.txt")
             .map_err(|_| GraphError::UnableToSaveModel)?;
 
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
 
-        writeln!(file, "\n[{}] Weights and Biases Analysis", timestamp)
+        writeln!(file, "\n[{}] Operation Params Analysis", timestamp)
             .map_err(|_| GraphError::UnableToSaveModel)?;
 
         writeln!(file, "----------------------------------------")
@@ -157,15 +158,15 @@ impl ParsedNodes {
                     }
 
                     // Values
-                    if let Some(weights) = &node.weights {
+                    if let Some(op_params) = &node.op_params {
                         writeln!(file, "\nAll Values:")
                             .map_err(|_| GraphError::UnableToSaveModel)?;
-                        writeln!(file, "Total elements: {}", weights.len())
+                        writeln!(file, "Total elements: {}", op_params.len())
                             .map_err(|_| GraphError::UnableToSaveModel)?;
 
                         // Write all values as a comma-separated list within brackets
                         write!(file, "[").map_err(|_| GraphError::UnableToSaveModel)?;
-                        for (i, &value) in weights.iter().enumerate() {
+                        for (i, &value) in op_params.iter().enumerate() {
                             if i > 0 {
                                 write!(file, ", ").map_err(|_| GraphError::UnableToSaveModel)?;
                             }
@@ -175,26 +176,31 @@ impl ParsedNodes {
                         writeln!(file, "]").map_err(|_| GraphError::UnableToSaveModel)?;
 
                         // Statistics
-                        let min = weights.iter().fold(f32::INFINITY, |a, &b| a.min(b));
-                        let max = weights.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-                        let sum: f32 = weights.iter().sum();
-                        let mean = sum / weights.len() as f32;
+                        let min = op_params.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+                        let max = op_params.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+                        let sum: f32 = op_params.iter().sum();
+                        let mean = sum / op_params.len() as f32;
 
                         // Count non-zero elements
-                        let non_zero_count = weights.iter().filter(|&&x| x != 0.0).count();
+                        let non_zero_count = op_params.iter().filter(|&&x| x != 0.0).count();
 
                         writeln!(file, "\nStatistics:")
                             .map_err(|_| GraphError::UnableToSaveModel)?;
-                        writeln!(file, "  Total elements: {}", weights.len())
+                        writeln!(file, "  Total elements: {}", op_params.len())
                             .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "  Non-zero elements: {}", non_zero_count)
                             .map_err(|_| GraphError::UnableToSaveModel)?;
-                        writeln!(file, "  Zero elements: {}", weights.len() - non_zero_count)
-                            .map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(
+                            file,
+                            "  Zero elements: {}",
+                            op_params.len() - non_zero_count
+                        )
+                        .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(
                             file,
                             "  Sparsity: {:.2}%",
-                            (weights.len() - non_zero_count) as f32 / weights.len() as f32 * 100.0
+                            (op_params.len() - non_zero_count) as f32 / op_params.len() as f32
+                                * 100.0
                         )
                         .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "  Min: {:.6}", min)
@@ -259,8 +265,8 @@ impl ParsedNodes {
                     NodeType::Node(node) => {
                         // Handle Const nodes
                         if matches!(node.op_type, OperationType::Const) {
-                            if let Some(weights) = &node.weights {
-                                node_outputs.insert(node_idx, vec![weights.clone()]);
+                            if let Some(op_params) = &node.op_params {
+                                node_outputs.insert(node_idx, vec![op_params.clone()]);
                             }
                             continue;
                         }
@@ -321,22 +327,37 @@ impl ParsedNodes {
         let result = match node.op_type {
             OperationType::Input => Ok(inputs.to_vec()),
             OperationType::Const => {
-                if let Some(weights) = &node.weights {
-                    Ok(vec![weights.clone()])
+                if let Some(op_params) = &node.op_params {
+                    Ok(vec![op_params.clone()])
                 } else {
                     Err(GraphError::InvalidInputShape)
                 }
             }
+            OperationType::Conv => {
+                if inputs.len() != 3 {
+                    return Err(GraphError::InvalidInputShape);
+                }
+                let input = &inputs[0];
+                let op_params = node
+                    .op_params
+                    .as_ref()
+                    .ok_or(GraphError::InvalidInputShape)?;
+
+                let mut output = vec![0.0];
+
+                Ok(vec![output])
+            }
+
             OperationType::MatMul | OperationType::EinSum => {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInputShape);
                 }
 
                 let input = &inputs[0]; // Shape: [784]
-                let weights = if inputs.len() > 1 {
+                let op_params = if inputs.len() > 1 {
                     &inputs[1]
-                } else if let Some(weights) = &node.weights {
-                    weights
+                } else if let Some(op_params) = &node.op_params {
+                    op_params
                 } else {
                     return Err(GraphError::InvalidInputShape);
                 };
@@ -347,7 +368,7 @@ impl ParsedNodes {
                 let weight_cols = input_dim; // 784 (PyTorch convention)
 
                 // Verify dimensions match
-                if weights.len() != weight_rows * weight_cols {
+                if op_params.len() != weight_rows * weight_cols {
                     return Err(GraphError::InvalidInputShape);
                 }
 
@@ -357,7 +378,7 @@ impl ParsedNodes {
                 output.iter_mut().enumerate().for_each(|(i, out)| {
                     *out = input.iter().enumerate().fold(0.0, |sum, (j, &input_val)| {
                         let weight_idx = i * input_dim + j;
-                        sum + input_val * weights[weight_idx]
+                        sum + input_val * op_params[weight_idx]
                     });
                 });
 
@@ -367,8 +388,6 @@ impl ParsedNodes {
                 let a = &inputs[0];
                 let b = if inputs.len() > 1 {
                     &inputs[1]
-                } else if let Some(bias) = &node.bias {
-                    bias
                 } else {
                     return Err(GraphError::InvalidInputShape);
                 };
@@ -504,10 +523,8 @@ pub struct SerializableNode {
     pub id: usize,
     /// Operation type
     pub op_type: OperationType,
-    /// Weights
-    pub weights: Option<Vec<f32>>,
-    /// Bias
-    pub bias: Option<Vec<f32>>,
+    /// Parameters (op_params or bias)
+    pub op_params: Option<Vec<f32>>,
     /// Attributes for the operations
     pub attributes: HashMap<String, Vec<usize>>,
 }
@@ -531,23 +548,21 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
             OperationType::RmAxis // Default to RmAxis for unknown operations
         };
 
-        println!("Node From : {:?}", node);
-        println!("Node op_type: {:?}", op_name.as_ref());
-
-        // Extract weights and biases based on node type
-        let (weights, bias) = match op_name.as_ref() {
+        // Extract op_params Or attributes
+        let op_params = match op_name.as_ref() {
             "Const" => {
                 if let Some(const_op) = node.op.downcast_ref::<Const>() {
                     if let Ok(tensor_data) = const_op.0.as_slice::<f32>() {
-                        (Some(tensor_data.to_vec()), None)
+                        Some(tensor_data.to_vec())
                     } else {
-                        (None, None)
+                        None
                     }
                 } else {
-                    (None, None)
+                    None
                 }
             }
-            _ => (None, None),
+
+            _ => None,
         };
 
         // Extract convolution attributes
@@ -609,8 +624,7 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
                 .map_or(1, |k| *k.to_scalar::<i32>().unwrap_or(&1)),
             id: node.id,
             op_type,
-            weights,
-            bias,
+            op_params,
             attributes,
         }
     }
@@ -930,7 +944,7 @@ impl Model {
                 None => {
                     debug!("Processing regular node {}", idx);
 
-                    // Create the node with proper operation type and weights/biases
+                    // Create the node with proper operation type and op_params
                     let serializable_node = SerializableNode::from(node);
                     nodes.insert(idx, NodeType::Node(serializable_node));
                 }

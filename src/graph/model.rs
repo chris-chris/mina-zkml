@@ -334,18 +334,144 @@ impl ParsedNodes {
                 }
             }
             OperationType::Conv => {
+                // Parse dimensions from inputs[0] and weight
+                let input_node = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+
                 if inputs.len() != 3 {
                     return Err(GraphError::InvalidInputShape);
                 }
-                let input = &inputs[0];
-                let op_params = node
-                    .op_params
-                    .as_ref()
-                    .ok_or(GraphError::InvalidInputShape)?;
 
-                let mut output = vec![0.0];
+                // Extract weights and biases
+                let weight = match self.nodes.get(&node.inputs[1].0) {
+                    Some(NodeType::Node(SerializableNode {
+                        op_type: OperationType::Const,
+                        op_params: Some(weights),
+                        ..
+                    })) => weights.clone(),
+                    _ => return Err(GraphError::InvalidInputShape),
+                };
+                let bias = match self.nodes.get(&node.inputs[2].0) {
+                    Some(NodeType::Node(SerializableNode {
+                        op_type: OperationType::Const,
+                        op_params: Some(bias),
+                        ..
+                    })) => bias.clone(),
+                    _ => return Err(GraphError::InvalidInputShape),
+                };
 
-                Ok(vec![output])
+                if let NodeType::Node(input) = input_node {
+                    let input_dims = &input.out_dims;
+                    let batch_size = input_dims[0] as i32; // N
+                    let input_channels = input_dims[1] as i32; // C
+                    let input_height = input_dims[2] as i32; // H
+                    let input_width = input_dims[3] as i32; // W
+
+                    // Parse Conv parameters
+                    let kernel_shape = node
+                        .attributes
+                        .get("kernel_shape")
+                        .ok_or(GraphError::InvalidInputShape)?
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+                    let strides = node
+                        .attributes
+                        .get("strides")
+                        .unwrap_or(&vec![1, 1])
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+                    let padding = node
+                        .attributes
+                        .get("pads")
+                        .unwrap_or(&vec![0, 0, 0, 0])
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+                    let dilations = node
+                        .attributes
+                        .get("dilations")
+                        .unwrap_or(&vec![1, 1])
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+
+                    // Use Conv node output dimensions directly
+                    let output_dims = &node.out_dims;
+                    let output_channels = output_dims[1] as i32;
+                    let output_height = output_dims[2] as i32;
+                    let output_width = output_dims[3] as i32;
+
+                    // Validate weight shape
+                    assert_eq!(
+                        weight.len() as i32,
+                        output_channels * input_channels * kernel_shape[0] * kernel_shape[1],
+                        "Weight dimensions do not match expected shape."
+                    );
+
+                    // Initialize output tensor
+                    let mut output = vec![
+                        0.0;
+                        (batch_size * output_channels * output_height * output_width)
+                            as usize
+                    ];
+
+                    // Perform convolution
+                    for n in 0..batch_size {
+                        for oc in 0..output_channels {
+                            for oh in 0..output_height {
+                                for ow in 0..output_width {
+                                    let mut sum = 0.0;
+                                    for ic in 0..input_channels {
+                                        for kh in 0..kernel_shape[0] {
+                                            for kw in 0..kernel_shape[1] {
+                                                let ih = oh * strides[0] + kh * dilations[0]
+                                                    - padding[0];
+                                                let iw = ow * strides[1] + kw * dilations[1]
+                                                    - padding[1];
+                                                if ih >= 0
+                                                    && ih < input_height
+                                                    && iw >= 0
+                                                    && iw < input_width
+                                                {
+                                                    // Proper indexing of the input tensor
+                                                    let input_idx = (((n * input_channels + ic)
+                                                        * input_height
+                                                        + ih)
+                                                        * input_width
+                                                        + iw)
+                                                        as usize;
+                                                    let weight_idx = (((oc * input_channels + ic)
+                                                        * kernel_shape[0]
+                                                        + kh)
+                                                        * kernel_shape[1]
+                                                        + kw)
+                                                        as usize;
+                                                    sum +=
+                                                        inputs[0][input_idx] * weight[weight_idx];
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Add bias
+                                    sum += bias[oc as usize];
+                                    let output_idx =
+                                        (((n * output_channels + oc) * output_height + oh)
+                                            * output_width
+                                            + ow) as usize;
+                                    output[output_idx] = sum;
+                                }
+                            }
+                        }
+                    }
+
+                    Ok(vec![output])
+                } else {
+                    Err(GraphError::InvalidNodeType)
+                }
             }
 
             OperationType::MatMul | OperationType::EinSum => {

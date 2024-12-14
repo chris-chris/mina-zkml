@@ -24,4 +24,8 @@ pub enum GraphError {
     InvalidOutputShape,
     #[error("Invalid parameter")]
     InvalidParams,
+    #[error("Invalid Node Type")]
+    InvalidNodeType,
+    #[error("Node Not Found")]
+    NodeNotFound,
 }

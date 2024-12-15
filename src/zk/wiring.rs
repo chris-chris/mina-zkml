@@ -106,7 +106,6 @@ impl ModelCircuitBuilder {
 
     pub fn build_circuit(&mut self, model: &Model) -> (Vec<CircuitGate<Fp>>, usize, usize) {
         let mut gates = Vec::new();
-
         // Calculate total number of public inputs
         let num_public: usize = model
             .graph
@@ -137,6 +136,10 @@ impl ModelCircuitBuilder {
                         circuit_size += output_size;
                     }
                     OperationType::Add => {
+                        let output_size = node.out_dims.iter().product::<usize>();
+                        circuit_size += output_size;
+                    }
+                    OperationType::Conv => {
                         let output_size = node.out_dims.iter().product::<usize>();
                         circuit_size += output_size;
                     }

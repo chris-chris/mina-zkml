@@ -1,6 +1,5 @@
-use crate::graph::model::{
-    Model, NodeType, OperationType, ParsedNodes, SerializableNode, VarVisibility, Visibility,
-};
+use crate::graph::model::{Model, ParsedNodes, VarVisibility, Visibility};
+use crate::graph::utilities::*;
 use std::collections::{BTreeMap, HashMap};
 
 #[test]
@@ -452,60 +451,4 @@ fn test_conv_complex_case() {
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0], expected_output);
-}
-
-// Utility function to create an input node
-fn create_input_node(id: usize, shape: Vec<usize>) -> NodeType {
-    NodeType::Node(SerializableNode {
-        inputs: vec![],
-        out_dims: shape,
-        out_scale: 1,
-        id,
-        op_type: OperationType::Input,
-        op_params: None,
-        attributes: HashMap::new(),
-    })
-}
-
-// Utility function to create a constant node (weight or bias)
-fn create_const_node(id: usize, shape: Vec<usize>, values: Vec<f32>) -> NodeType {
-    NodeType::Node(SerializableNode {
-        inputs: vec![],
-        out_dims: shape,
-        out_scale: 1,
-        id,
-        op_type: OperationType::Const,
-        op_params: Some(values),
-        attributes: HashMap::new(),
-    })
-}
-
-// Utility function to create a Conv node
-fn create_conv_node(
-    id: usize,
-    inputs: Vec<(usize, usize)>,
-    out_dims: Vec<usize>,
-    attributes: HashMap<String, Vec<i32>>,
-) -> NodeType {
-    NodeType::Node(SerializableNode {
-        inputs,
-        out_dims,
-        out_scale: 1,
-        id,
-        op_type: OperationType::Conv,
-        op_params: None,
-        attributes: attributes
-            .into_iter()
-            .map(|(key, value)| {
-                // Map each value to usize explicitly
-                (
-                    key,
-                    value
-                        .into_iter()
-                        .map(|v| v as usize)
-                        .collect::<Vec<usize>>(),
-                )
-            })
-            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
-    })
 }

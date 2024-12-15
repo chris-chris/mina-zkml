@@ -334,15 +334,15 @@ impl ParsedNodes {
                 }
             }
             OperationType::Conv => {
+                if inputs.len() != 3 {
+                    return Err(GraphError::InvalidInputShape);
+                }
+
                 // Parse dimensions from inputs[0] and weight
                 let input_node = self
                     .nodes
                     .get(&node.inputs[0].0)
                     .ok_or(GraphError::NodeNotFound)?;
-
-                if inputs.len() != 3 {
-                    return Err(GraphError::InvalidInputShape);
-                }
 
                 // Extract weights and biases
                 let weight = match self.nodes.get(&node.inputs[1].0) {

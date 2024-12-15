@@ -1,3 +1,4 @@
+use crate::graph::model::*;
 use ark_ff::{UniformRand, Zero};
 use ark_poly::EvaluationDomain;
 use groupmap::GroupMap;
@@ -19,7 +20,6 @@ use std::{array, sync::Arc};
 
 use super::wiring::ModelCircuitBuilder;
 use super::ZkOpeningProof;
-use crate::graph::model::{Model, Visibility};
 
 type SpongeParams = PlonkSpongeConstantsKimchi;
 type BaseSponge = DefaultFqSponge<VestaParameters, SpongeParams>;
@@ -54,40 +54,32 @@ impl ProofSystem {
         let mut builder = ModelCircuitBuilder::new();
         let (gates, domain_size, zk_rows) = builder.build_circuit(model);
 
-        // Calculate total number of public inputs and outputs based on visibility
-        let num_public_inputs = if model.visibility.input == Visibility::Public {
-            model
-                .graph
-                .inputs
-                .iter()
-                .map(|&idx| {
-                    if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&idx] {
-                        node.out_dims.iter().product::<usize>()
-                    } else {
-                        0usize
-                    }
-                })
-                .sum::<usize>()
-        } else {
-            0
-        };
+        // Calculate total number of public inputs and outputs
+        let num_public_inputs = model
+            .graph
+            .inputs
+            .iter()
+            .map(|&idx| {
+                if let NodeType::Node(node) = &model.graph.nodes[&idx] {
+                    node.out_dims.iter().product::<usize>()
+                } else {
+                    0usize
+                }
+            })
+            .sum::<usize>();
 
-        let num_public_outputs = if model.visibility.output == Visibility::Public {
-            model
-                .graph
-                .outputs
-                .iter()
-                .map(|&(node, _)| {
-                    if let crate::graph::model::NodeType::Node(node) = &model.graph.nodes[&node] {
-                        node.out_dims.iter().product::<usize>()
-                    } else {
-                        0usize
-                    }
-                })
-                .sum::<usize>()
-        } else {
-            0
-        };
+        let num_public_outputs = model
+            .graph
+            .outputs
+            .iter()
+            .map(|&(node, _)| {
+                if let NodeType::Node(node) = &model.graph.nodes[&node] {
+                    node.out_dims.iter().product::<usize>()
+                } else {
+                    0usize
+                }
+            })
+            .sum::<usize>();
 
         let total_public = num_public_inputs + num_public_outputs;
 
@@ -186,15 +178,22 @@ impl ProofSystem {
 
         // Add space for intermediate computations
         for node in self.model.graph.nodes.values() {
-            if let crate::graph::model::NodeType::Node(node) = node {
+            if let NodeType::Node(node) = node {
+                println!(
+                    "Calculate space needed for operations node.out_dims: {:?}",
+                    node.out_dims
+                );
                 match node.op_type {
-                    crate::graph::model::OperationType::MatMul => {
+                    OperationType::MatMul => {
                         witness_size += node.out_dims.iter().product::<usize>();
                     }
-                    crate::graph::model::OperationType::Relu => {
+                    OperationType::Relu => {
                         witness_size += node.out_dims.iter().product::<usize>();
                     }
-                    crate::graph::model::OperationType::Add => {
+                    OperationType::Add => {
+                        witness_size += node.out_dims.iter().product::<usize>();
+                    }
+                    OperationType::Conv => {
                         witness_size += node.out_dims.iter().product::<usize>();
                     }
                     _ => {}
@@ -215,9 +214,9 @@ impl ProofSystem {
         let mut intermediate_values = std::collections::HashMap::new();
 
         for (idx, node) in &self.model.graph.nodes {
-            if let crate::graph::model::NodeType::Node(node) = node {
+            if let NodeType::Node(node) = node {
                 match node.op_type {
-                    crate::graph::model::OperationType::MatMul => {
+                    OperationType::MatMul => {
                         let input_size = node.inputs[0].1;
                         let output_size = node.out_dims.iter().product();
 
@@ -248,7 +247,7 @@ impl ProofSystem {
                             current_pos += output_size;
                         }
                     }
-                    crate::graph::model::OperationType::Add => {
+                    OperationType::Add => {
                         if let (Some((left_idx, _)), Some((right_idx, _))) =
                             (node.inputs.first(), node.inputs.get(1))
                         {
@@ -270,8 +269,24 @@ impl ProofSystem {
                             }
                         }
                     }
-                    crate::graph::model::OperationType::Relu
-                    | crate::graph::model::OperationType::Max => {
+                    OperationType::Relu | OperationType::Max => {
+                        if let Some((input_idx, _)) = node.inputs.first() {
+                            if let Some(&input_row) = intermediate_values.get(input_idx) {
+                                let size = node.out_dims.iter().product();
+                                for i in 0..size {
+                                    let x = witness[0][input_row + i];
+                                    let result = if x == Fp::zero() { Fp::zero() } else { x };
+                                    // Set the result in all columns
+                                    for item in witness.iter_mut().take(COLUMNS) {
+                                        item[current_row + i] = result;
+                                    }
+                                }
+                                intermediate_values.insert(*idx, current_row);
+                                current_row += size;
+                            }
+                        }
+                    }
+                    OperationType::Conv => {
                         if let Some((input_idx, _)) = node.inputs.first() {
                             if let Some(&input_row) = intermediate_values.get(input_idx) {
                                 let size = node.out_dims.iter().product();
@@ -403,8 +418,8 @@ impl ProofSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::model::{RunArgs, VarVisibility};
     use std::collections::HashMap;
+    use {RunArgs, VarVisibility, Visibility};
 
     #[test]
     fn test_proof_system_public() {

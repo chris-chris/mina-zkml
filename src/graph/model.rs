@@ -33,6 +33,7 @@ pub enum OperationType {
     RmAxis,
     Reshape,
     Conv,
+    MaxPool,
 }
 
 /// Serializable version of OutletId
@@ -386,7 +387,7 @@ impl ParsedNodes {
                         .collect::<Vec<i32>>();
                     let padding = node
                         .attributes
-                        .get("pads")
+                        .get("padding")
                         .unwrap_or(&vec![0, 0, 0, 0])
                         .iter()
                         .map(|&x| x as i32)
@@ -574,6 +575,103 @@ impl ParsedNodes {
                 }
                 Ok(vec![inputs[0].clone()])
             }
+            OperationType::MaxPool => {
+                if inputs.is_empty() {
+                    return Err(GraphError::InvalidInputShape);
+                }
+
+                let input_node = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+
+                if let NodeType::Node(input) = input_node {
+                    let input_dims = &input.out_dims;
+                    let batch_size = input_dims[0] as i32; // N
+                    let input_channels = input_dims[1] as i32; // C
+                    let input_height = input_dims[2] as i32; // H
+                    let input_width = input_dims[3] as i32; // W
+
+                    // Parse MaxPool parameters
+                    let kernel_shape = node
+                        .attributes
+                        .get("kernel_shape")
+                        .ok_or(GraphError::InvalidInputShape)?
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+                    let strides = node
+                        .attributes
+                        .get("strides")
+                        .unwrap_or(&vec![1, 1])
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+                    let padding = node
+                        .attributes
+                        .get("padding")
+                        .unwrap_or(&vec![0, 0, 0, 0])
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+
+                    // Calculate output dimensions
+                    let output_height =
+                        (input_height + padding[0] + padding[2] - kernel_shape[0]) / strides[0] + 1;
+                    let output_width =
+                        (input_width + padding[1] + padding[3] - kernel_shape[1]) / strides[1] + 1;
+
+                    // Initialize output tensor
+                    let mut output = vec![
+                        0.0;
+                        (batch_size * input_channels * output_height * output_width)
+                            as usize
+                    ];
+
+                    // Perform MaxPool
+                    for n in 0..batch_size {
+                        for c in 0..input_channels {
+                            for oh in 0..output_height {
+                                for ow in 0..output_width {
+                                    let mut max_value = f32::NEG_INFINITY;
+
+                                    for kh in 0..kernel_shape[0] {
+                                        for kw in 0..kernel_shape[1] {
+                                            let ih = oh * strides[0] + kh - padding[0];
+                                            let iw = ow * strides[1] + kw - padding[1];
+
+                                            // Ensure index is within bounds
+                                            if ih >= 0
+                                                && ih < input_height
+                                                && iw >= 0
+                                                && iw < input_width
+                                            {
+                                                let input_idx =
+                                                    (((n * input_channels + c) * input_height + ih)
+                                                        * input_width
+                                                        + iw)
+                                                        as usize;
+
+                                                max_value = max_value.max(inputs[0][input_idx]);
+                                            }
+                                        }
+                                    }
+
+                                    let output_idx =
+                                        (((n * input_channels + c) * output_height + oh)
+                                            * output_width
+                                            + ow) as usize;
+                                    output[output_idx] = max_value;
+                                }
+                            }
+                        }
+                    }
+
+                    Ok(vec![output])
+                } else {
+                    Err(GraphError::InvalidNodeType)
+                }
+            }
         };
 
         // Log the tensor values after each operation
@@ -718,10 +816,10 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
 
             // Padding
             if let PaddingSpec::Explicit(before, after) = &pool_spec.padding {
-                let mut pads = before.clone();
-                pads.extend(after.iter().cloned());
-                println!("pool_spec: {:?} ", pads);
-                attributes.insert("pads".to_string(), pads.into_vec());
+                let mut padding = before.clone();
+                padding.extend(after.iter().cloned());
+                println!("pool_spec: {:?} ", padding);
+                attributes.insert("padding".to_string(), padding.into_vec());
             }
 
             // Kernel format

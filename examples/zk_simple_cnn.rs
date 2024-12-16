@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut attributes = HashMap::new();
     attributes.insert("kernel_shape".to_string(), vec![3, 3]);
     attributes.insert("strides".to_string(), vec![1, 1]);
-    attributes.insert("pads".to_string(), vec![0, 0, 0, 0]);
+    attributes.insert("padding".to_string(), vec![0, 0, 0, 0]);
     attributes.insert("dilations".to_string(), vec![1, 1]);
 
     nodes.insert(

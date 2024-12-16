@@ -30,7 +30,7 @@ fn test_conv_simple() {
     let mut attributes = HashMap::new();
     attributes.insert("kernel_shape".to_string(), vec![3, 3]);
     attributes.insert("strides".to_string(), vec![1, 1]);
-    attributes.insert("pads".to_string(), vec![0, 0, 0, 0]);
+    attributes.insert("padding".to_string(), vec![0, 0, 0, 0]);
     attributes.insert("dilations".to_string(), vec![1, 1]);
 
     nodes.insert(
@@ -101,7 +101,7 @@ fn test_conv_stride() {
     let mut attributes = HashMap::new();
     attributes.insert("kernel_shape".to_string(), vec![3, 3]);
     attributes.insert("strides".to_string(), vec![2, 2]);
-    attributes.insert("pads".to_string(), vec![0, 0, 0, 0]);
+    attributes.insert("padding".to_string(), vec![0, 0, 0, 0]);
     attributes.insert("dilations".to_string(), vec![1, 1]);
 
     nodes.insert(
@@ -168,7 +168,7 @@ fn test_conv_multiple_output_channels() {
     let mut attributes = HashMap::new();
     attributes.insert("kernel_shape".to_string(), vec![3, 3]);
     attributes.insert("strides".to_string(), vec![1, 1]);
-    attributes.insert("pads".to_string(), vec![0, 0, 0, 0]);
+    attributes.insert("padding".to_string(), vec![0, 0, 0, 0]);
     attributes.insert("dilations".to_string(), vec![1, 1]);
 
     nodes.insert(
@@ -236,7 +236,7 @@ fn test_conv_with_padding() {
     let mut attributes = HashMap::new();
     attributes.insert("kernel_shape".to_string(), vec![3, 3]);
     attributes.insert("strides".to_string(), vec![1, 1]);
-    attributes.insert("pads".to_string(), vec![1, 1, 1, 1]); // Padding of 1 on all sides
+    attributes.insert("padding".to_string(), vec![1, 1, 1, 1]); // Padding of 1 on all sides
     attributes.insert("dilations".to_string(), vec![1, 1]);
 
     nodes.insert(
@@ -305,7 +305,7 @@ fn test_conv_with_dilation() {
     let mut attributes = HashMap::new();
     attributes.insert("kernel_shape".to_string(), vec![3, 3]);
     attributes.insert("strides".to_string(), vec![1, 1]);
-    attributes.insert("pads".to_string(), vec![0, 0, 0, 0]); // No padding
+    attributes.insert("padding".to_string(), vec![0, 0, 0, 0]); // No padding
     attributes.insert("dilations".to_string(), vec![2, 2]); // Dilation factor of 2
 
     nodes.insert(
@@ -386,7 +386,7 @@ fn test_conv_complex_case() {
     let mut attributes = HashMap::new();
     attributes.insert("kernel_shape".to_string(), vec![3, 3]);
     attributes.insert("strides".to_string(), vec![2, 2]); // Stride of 2
-    attributes.insert("pads".to_string(), vec![1, 1, 1, 1]); // Padding of 1 on all sides
+    attributes.insert("padding".to_string(), vec![1, 1, 1, 1]); // Padding of 1 on all sides
     attributes.insert("dilations".to_string(), vec![2, 2]); // Dilation factor of 2
 
     nodes.insert(

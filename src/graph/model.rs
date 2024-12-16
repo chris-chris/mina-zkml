@@ -59,7 +59,7 @@ impl From<&OutletId> for SerializableOutletId {
 }
 
 /// Main model structure containing the parsed graph and variable visibility settings
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Model {
     pub graph: ParsedNodes,
     pub visibility: VarVisibility,
@@ -83,7 +83,7 @@ pub enum NodeType {
 }
 
 /// Represents the parsed neural network graph structure
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ParsedNodes {
     /// Map of node indices to their corresponding node types
     pub nodes: BTreeMap<usize, NodeType>,
@@ -580,6 +580,15 @@ pub struct VarVisibility {
     pub output: Visibility,
 }
 
+impl Default for VarVisibility {
+    fn default() -> Self {
+        VarVisibility {
+            input: Visibility::Private,
+            output: Visibility::Private,
+        }
+    }
+}
+
 /// Defines how inputs are mapped in subgraphs
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum InputMapping {
@@ -917,5 +926,14 @@ impl Model {
         }
 
         Ok(nodes)
+    }
+
+    /// Returns a string representation of the graph
+    pub fn to_str(&self) -> Option<String> {
+        let mut result = String::new();
+        for (idx, node) in &self.graph.nodes {
+            result.push_str(&format!("Node {}: {:?}\n", idx, node));
+        }
+        Some(result)
     }
 }

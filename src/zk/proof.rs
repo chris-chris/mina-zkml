@@ -54,32 +54,40 @@ impl ProofSystem {
         let mut builder = ModelCircuitBuilder::new();
         let (gates, domain_size, zk_rows) = builder.build_circuit(model);
 
-        // Calculate total number of public inputs and outputs
-        let num_public_inputs = model
-            .graph
-            .inputs
-            .iter()
-            .map(|&idx| {
-                if let NodeType::Node(node) = &model.graph.nodes[&idx] {
-                    node.out_dims.iter().product::<usize>()
-                } else {
-                    0usize
-                }
-            })
-            .sum::<usize>();
+        // Calculate total number of public inputs and outputs based on visibility
+        let num_public_inputs = if model.visibility.input == Visibility::Public {
+            model
+                .graph
+                .inputs
+                .iter()
+                .map(|&idx| {
+                    if let NodeType::Node(node) = &model.graph.nodes[&idx] {
+                        node.out_dims.iter().product::<usize>()
+                    } else {
+                        0usize
+                    }
+                })
+                .sum::<usize>()
+        } else {
+            0
+        };
 
-        let num_public_outputs = model
-            .graph
-            .outputs
-            .iter()
-            .map(|&(node, _)| {
-                if let NodeType::Node(node) = &model.graph.nodes[&node] {
-                    node.out_dims.iter().product::<usize>()
-                } else {
-                    0usize
-                }
-            })
-            .sum::<usize>();
+        let num_public_outputs = if model.visibility.output == Visibility::Public {
+            model
+                .graph
+                .outputs
+                .iter()
+                .map(|&(node, _)| {
+                    if let NodeType::Node(node) = &model.graph.nodes[&node] {
+                        node.out_dims.iter().product::<usize>()
+                    } else {
+                        0usize
+                    }
+                })
+                .sum::<usize>()
+        } else {
+            0
+        };
 
         let total_public = num_public_inputs + num_public_outputs;
 
@@ -196,6 +204,9 @@ impl ProofSystem {
                     OperationType::Conv => {
                         witness_size += node.out_dims.iter().product::<usize>();
                     }
+                    OperationType::MaxPool => {
+                        witness_size += node.out_dims.iter().product::<usize>();
+                    }
                     _ => {}
                 }
             }
@@ -278,11 +289,11 @@ impl ProofSystem {
                                     let result = if x == Fp::zero() { Fp::zero() } else { x };
                                     // Set the result in all columns
                                     for item in witness.iter_mut().take(COLUMNS) {
-                                        item[current_row + i] = result;
+                                        item[current_pos + i] = result;
                                     }
                                 }
-                                intermediate_values.insert(*idx, current_row);
-                                current_row += size;
+                                intermediate_values.insert(*idx, current_pos);
+                                current_pos += size;
                             }
                         }
                     }

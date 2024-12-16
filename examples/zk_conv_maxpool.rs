@@ -88,11 +88,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Generate proof
     println!("Generating proof...");
     let prover_output = proof_system.prove(&input_vec)?;
+    let output = prover_output
+        .output
+        .as_ref()
+        .expect("Output should be public");
     println!("Prediction:");
     println!("Output: {:?}", prover_output.output);
 
     // 5. Verify proof
-    let is_valid = proof_system.verify(&prover_output.output, &prover_output.proof)?;
+    let is_valid = proof_system.verify(&prover_output.proof, Some(&input_vec), Some(output))?;
     println!(
         "Verification result: {}",
         if is_valid { "✓ Valid" } else { "✗ Invalid" }

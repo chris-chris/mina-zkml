@@ -830,8 +830,12 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
                         vec![*count_include_pad as usize],
                     );
                 }
+                PaddingSpec::Valid => {
+                    let kernel_rank = pool_spec.kernel_shape.len();
+                    attributes.insert("padding".to_string(), vec![0; kernel_rank * 2]);
+                }
                 // TODO: implement SameUpper & SameLower of the PaddingSpec
-                PaddingSpec::Valid | _ => {
+                _ => {
                     let kernel_rank = pool_spec.kernel_shape.len();
                     attributes.insert("padding".to_string(), vec![0; kernel_rank * 2]);
                 }

@@ -1,11 +1,11 @@
-use mina_zkml::graph::model::{Model, ParsedNodes, VarVisibility, Visibility};
+use mina_zkml::graph::model::*;
 use mina_zkml::graph::utilities::*;
 use mina_zkml::zk::proof::ProofSystem;
 use std::collections::{BTreeMap, HashMap};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Simple Conv Model Setup
-    println!("Setting up a simple Conv model...");
+    // 1. Simple Conv + MaxPool Model Setup
+    println!("Setting up a simple Conv + MaxPool model...");
     let mut nodes = BTreeMap::new();
 
     // Input node (id: 0)
@@ -29,11 +29,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     nodes.insert(2, create_const_node(2, vec![1], vec![0.0])); // No bias
 
     // Conv node (id: 3)
-    let mut attributes = HashMap::new();
-    attributes.insert("kernel_shape".to_string(), vec![3, 3]);
-    attributes.insert("strides".to_string(), vec![1, 1]);
-    attributes.insert("padding".to_string(), vec![0, 0, 0, 0]);
-    attributes.insert("dilations".to_string(), vec![1, 1]);
+    let mut conv_attributes = HashMap::new();
+    conv_attributes.insert("kernel_shape".to_string(), vec![3, 3]);
+    conv_attributes.insert("strides".to_string(), vec![1, 1]);
+    conv_attributes.insert("padding".to_string(), vec![0, 0, 0, 0]);
+    conv_attributes.insert("dilations".to_string(), vec![1, 1]);
 
     nodes.insert(
         3,
@@ -41,15 +41,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             3,
             vec![(0, 0), (1, 0), (2, 0)],
             vec![1, 1, 2, 2],
-            attributes,
+            conv_attributes,
         ),
+    );
+
+    // MaxPool node (id: 4)
+    let mut maxpool_attributes = HashMap::new();
+    maxpool_attributes.insert("kernel_shape".to_string(), vec![2, 2]); // Kernel: 2x2
+    maxpool_attributes.insert("strides".to_string(), vec![2, 2]); // Strides: 2
+    maxpool_attributes.insert("padding".to_string(), vec![0, 0, 0, 0]); // No padding
+
+    nodes.insert(
+        4,
+        create_max_pool_node(4, vec![(3, 0)], vec![1, 1, 1, 1], maxpool_attributes),
     );
 
     // Graph setup
     let graph = ParsedNodes {
         nodes,
         inputs: vec![0],
-        outputs: vec![(3, 0)],
+        outputs: vec![(4, 0)], // Final output from MaxPool
     };
 
     let model = Model {

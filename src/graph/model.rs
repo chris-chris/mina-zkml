@@ -815,11 +815,26 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
             }
 
             // Padding
-            if let PaddingSpec::Explicit(before, after) = &pool_spec.padding {
-                let mut padding = before.clone();
-                padding.extend(after.iter().cloned());
-                println!("pool_spec: {:?} ", padding);
-                attributes.insert("padding".to_string(), padding.into_vec());
+            match &pool_spec.padding {
+                PaddingSpec::Explicit(before, after) => {
+                    let mut padding = before.clone();
+                    padding.extend(after.iter().cloned());
+                    attributes.insert("padding".to_string(), padding.into_vec());
+                }
+                PaddingSpec::ExplicitOnnxPool(before, after, count_include_pad) => {
+                    let mut padding = before.clone();
+                    padding.extend(after.iter().cloned());
+                    attributes.insert("padding".to_string(), padding.into_vec());
+                    attributes.insert(
+                        "count_include_pad".to_string(),
+                        vec![*count_include_pad as usize],
+                    );
+                }
+                // TODO: implement SameUpper & SameLower of the PaddingSpec
+                PaddingSpec::Valid | _ => {
+                    let kernel_rank = pool_spec.kernel_shape.len();
+                    attributes.insert("padding".to_string(), vec![0; kernel_rank * 2]);
+                }
             }
 
             // Kernel format

@@ -173,6 +173,10 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found matrix operation: {}", name);
             Some(OperationType::MatMul)
         }
+        name if name == *"MaxPool" => {
+            println!("Found MaxPool operation: {}", name);
+            Some(OperationType::MaxPool)
+        }
         name if name == *"EinSum" => {
             println!("Found matrix operation: {}", name);
             Some(OperationType::EinSum)

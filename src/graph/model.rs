@@ -1,4 +1,5 @@
 use super::errors::GraphError;
+use super::utilities::handle_pool_spec;
 use chrono::Local;
 use instant;
 use log::debug;
@@ -9,7 +10,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
 };
-use tract_onnx::tract_core::ops::cnn::{Conv, KernelFormat, PaddingSpec};
+use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
 use tract_onnx::{prelude::*, tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
 use crate::zk::operations::identify_tract_operation;
@@ -331,12 +332,12 @@ impl ParsedNodes {
                 if let Some(op_params) = &node.op_params {
                     Ok(vec![op_params.clone()])
                 } else {
-                    Err(GraphError::InvalidInputShape)
+                    Err(GraphError::InvalidInputShape(0))
                 }
             }
             OperationType::Conv => {
                 if inputs.len() != 3 {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(1));
                 }
 
                 // Parse dimensions from inputs[0] and weight
@@ -352,7 +353,7 @@ impl ParsedNodes {
                         op_params: Some(weights),
                         ..
                     })) => weights.clone(),
-                    _ => return Err(GraphError::InvalidInputShape),
+                    _ => return Err(GraphError::InvalidInputShape(2)),
                 };
                 let bias = match self.nodes.get(&node.inputs[2].0) {
                     Some(NodeType::Node(SerializableNode {
@@ -360,7 +361,7 @@ impl ParsedNodes {
                         op_params: Some(bias),
                         ..
                     })) => bias.clone(),
-                    _ => return Err(GraphError::InvalidInputShape),
+                    _ => return Err(GraphError::InvalidInputShape(3)),
                 };
 
                 if let NodeType::Node(input) = input_node {
@@ -374,7 +375,7 @@ impl ParsedNodes {
                     let kernel_shape = node
                         .attributes
                         .get("kernel_shape")
-                        .ok_or(GraphError::InvalidInputShape)?
+                        .ok_or(GraphError::InvalidInputShape(4))?
                         .iter()
                         .map(|&x| x as i32)
                         .collect::<Vec<i32>>();
@@ -477,7 +478,7 @@ impl ParsedNodes {
 
             OperationType::MatMul | OperationType::EinSum => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(5));
                 }
 
                 let input = &inputs[0]; // Shape: [784]
@@ -486,7 +487,7 @@ impl ParsedNodes {
                 } else if let Some(op_params) = &node.op_params {
                     op_params
                 } else {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(6));
                 };
 
                 let input_dim = input.len(); // 784
@@ -496,7 +497,7 @@ impl ParsedNodes {
 
                 // Verify dimensions match
                 if op_params.len() != weight_rows * weight_cols {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(7));
                 }
 
                 let mut output = vec![0.0; output_dim];
@@ -516,17 +517,17 @@ impl ParsedNodes {
                 let b = if inputs.len() > 1 {
                     &inputs[1]
                 } else {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(8));
                 };
 
                 if a.len() != b.len() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(9));
                 }
                 Ok(vec![a.iter().zip(b.iter()).map(|(&x, &y)| x + y).collect()])
             }
             OperationType::Relu | OperationType::Max => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(10));
                 }
 
                 let result = inputs[0].iter().map(|&x| x.max(0.0)).collect();
@@ -534,12 +535,12 @@ impl ParsedNodes {
             }
             OperationType::Sigmoid => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(11));
                 }
 
                 let expected_size: usize = node.out_dims.iter().product();
                 if inputs[0].len() != expected_size {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(12));
                 }
 
                 Ok(vec![inputs[0]
@@ -557,27 +558,27 @@ impl ParsedNodes {
             }
             OperationType::RmAxis => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(13));
                 }
 
                 let expected_size: usize = node.out_dims.iter().product();
                 let input = &inputs[0];
 
                 if input.len() != expected_size {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(14));
                 }
 
                 Ok(vec![input.clone()])
             }
             OperationType::Reshape => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(15));
                 }
                 Ok(vec![inputs[0].clone()])
             }
             OperationType::MaxPool => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(16));
                 }
 
                 let input_node = self
@@ -591,12 +592,13 @@ impl ParsedNodes {
                     let input_channels = input_dims[1] as i32; // C
                     let input_height = input_dims[2] as i32; // H
                     let input_width = input_dims[3] as i32; // W
-
+                    println!("node id: {:?}", node.id);
+                    println!("node attributes: {:?}", node.attributes);
                     // Parse MaxPool parameters
                     let kernel_shape = node
                         .attributes
                         .get("kernel_shape")
-                        .ok_or(GraphError::InvalidInputShape)?
+                        .ok_or(GraphError::InvalidInputShape(17))?
                         .iter()
                         .map(|&x| x as i32)
                         .collect::<Vec<i32>>();
@@ -791,65 +793,10 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
 
         // Extract convolution attributes
         let mut attributes = HashMap::new();
-        if let Some(conv_op) = node.op.downcast_ref::<Conv>() {
-            let pool_spec = &conv_op.pool_spec;
-
-            println!("pool_spec: {:?} ", pool_spec);
-            // Kernel shape
-            attributes.insert(
-                "kernel_shape".to_string(),
-                pool_spec.kernel_shape.clone().into_iter().collect(),
-            );
-
-            // Strides
-            if let Some(strides) = &pool_spec.strides {
-                attributes.insert("strides".to_string(), strides.clone().into_iter().collect());
-            }
-
-            // Dilations
-            if let Some(dilations) = &pool_spec.dilations {
-                attributes.insert(
-                    "dilations".to_string(),
-                    dilations.clone().into_iter().collect(),
-                );
-            }
-
-            // Padding
-            match &pool_spec.padding {
-                PaddingSpec::Explicit(before, after) => {
-                    let mut padding = before.clone();
-                    padding.extend(after.iter().cloned());
-                    attributes.insert("padding".to_string(), padding.into_vec());
-                }
-                PaddingSpec::ExplicitOnnxPool(before, after, count_include_pad) => {
-                    let mut padding = before.clone();
-                    padding.extend(after.iter().cloned());
-                    attributes.insert("padding".to_string(), padding.into_vec());
-                    attributes.insert(
-                        "count_include_pad".to_string(),
-                        vec![*count_include_pad as usize],
-                    );
-                }
-                PaddingSpec::Valid => {
-                    let kernel_rank = pool_spec.kernel_shape.len();
-                    attributes.insert("padding".to_string(), vec![0; kernel_rank * 2]);
-                }
-                // TODO: implement SameUpper & SameLower of the PaddingSpec
-                _ => {
-                    let kernel_rank = pool_spec.kernel_shape.len();
-                    attributes.insert("padding".to_string(), vec![0; kernel_rank * 2]);
-                }
-            }
-
-            // Kernel format
-            attributes.insert(
-                "kernel_format".to_string(),
-                vec![match conv_op.kernel_fmt {
-                    KernelFormat::OIHW => 0,
-                    KernelFormat::HWIO => 1,
-                    KernelFormat::OHWI => 2,
-                }],
-            );
+        if let Some(op) = node.op.as_any().downcast_ref::<Conv>() {
+            handle_pool_spec(&mut attributes, &op.pool_spec, &Some(op.kernel_fmt));
+        } else if let Some(op) = node.op.as_any().downcast_ref::<MaxPool>() {
+            handle_pool_spec(&mut attributes, &op.pool_spec, &None);
         }
 
         SerializableNode {

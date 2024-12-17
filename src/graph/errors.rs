@@ -10,8 +10,8 @@ pub enum GraphError {
     MissingBatchSize,
     #[error("Missing node {0}")]
     MissingNode(usize),
-    #[error("Invalid input shape")]
-    InvalidInputShape,
+    #[error("Invalid input shape {0}")]
+    InvalidInputShape(usize),
     #[error("Invalid input slot {0}")]
     InvalidInputSlot(usize),
     #[error("Invalid output slot {0}")]

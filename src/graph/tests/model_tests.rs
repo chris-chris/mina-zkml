@@ -79,7 +79,7 @@ fn test_matmul_operation() {
     // Test invalid input dimensions
     let invalid_input1 = vec![1.0, 2.0, 3.0]; // 3 elements instead of 2
     let result = model.graph.execute(&[invalid_input1, input2]);
-    assert!(matches!(result, Err(GraphError::InvalidInputShape)));
+    assert!(matches!(result, Err(GraphError::InvalidInputShape(20))));
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn test_sigmoid_operation() {
     // Test with invalid input shape
     let invalid_input = vec![-2.0, 0.0]; // 2 elements instead of 3
     let result = model.graph.execute(&[invalid_input]);
-    assert!(matches!(result, Err(GraphError::InvalidInputShape)));
+    assert!(matches!(result, Err(GraphError::InvalidInputShape(20))));
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn test_add_operation() {
     let input1 = vec![1.0, 2.0, 3.0];
     let input2 = vec![4.0, 5.0];
     let result = model.graph.execute(&[input1, input2]);
-    assert!(matches!(result, Err(GraphError::InvalidInputShape)));
+    assert!(matches!(result, Err(GraphError::InvalidInputShape(20))));
 }
 
 #[test]

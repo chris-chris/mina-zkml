@@ -261,7 +261,7 @@ fn main() -> Result<()> {
             let proof_data = json!({
                 "metadata": {
                     "model": model.to_str().context("Invalid model path")?,
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "timestamp": "chrono::Utc::now().to_rfc3339()",
                     "visibility": {
                         "input": input_visibility,
                         "output": output_visibility,

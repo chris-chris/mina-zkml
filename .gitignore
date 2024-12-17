@@ -4,3 +4,6 @@
 test_model.json
 test_proof.json
 test_model.json
+
+node_modules
+build/

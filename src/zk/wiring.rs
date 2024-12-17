@@ -36,24 +36,29 @@ impl ModelCircuitBuilder {
         (2 * (PERMUTS + 1) * num_chunks - 2) / PERMUTS
     }
 
-    /// Calculate next power of 2
+    /// Calculate next power of two
     fn next_power_of_two(n: usize) -> usize {
-        let mut v = n;
-        v -= 1;
-        v |= v >> 1;
-        v |= v >> 2;
-        v |= v >> 4;
-        v |= v >> 8;
-        v |= v >> 16;
-        v |= v >> 32;
-        v += 1;
-        v
+        if n.is_power_of_two() {
+            n
+        } else {
+            let mut v = n;
+            v -= 1;
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            #[cfg(target_pointer_width = "64")]
+            {
+                v |= v >> 32;
+            }
+            v += 1;
+            v
+        }
     }
 
     /// Create wires for a row
     fn create_wires(row: usize) -> [Wire; PERMUTS] {
-        // Create wires for the first PERMUTS columns (which can be wired)
-        // Each wire references itself by default
         [
             Wire { row, col: 0 }, // Current row, main wire
             Wire { row, col: 1 }, // Current row, auxiliary wire 1

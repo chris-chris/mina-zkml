@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum GraphError {
-    #[error("Unable to read model")]
+    #[error("Unable to read model: More Info: {0}")]
     UnableToReadModel(String),
     #[error("Unable to save model")]
     UnableToSaveModel,

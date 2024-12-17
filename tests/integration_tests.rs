@@ -33,6 +33,21 @@ fn test_model_mnist() {
 }
 
 #[test]
+fn test_model_lenet() {
+    let run_args = RunArgs {
+        variables: HashMap::default(),
+    };
+
+    let visibility = VarVisibility {
+        input: Visibility::Public,
+        output: Visibility::Public,
+    };
+
+    let model_path = build_model_path("models/lenet.onnx");
+    test_model_with_args(&model_path, run_args, visibility);
+}
+
+#[test]
 fn test_model_cardionet() {
     let run_args = RunArgs {
         variables: HashMap::from([("batch_size".to_string(), 1)]),

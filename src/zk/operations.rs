@@ -152,6 +152,7 @@ pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
         OperationType::Max => Some(OnnxOperation::Max),
         OperationType::RmAxis => Some(OnnxOperation::RmAxis),
         OperationType::Reshape => Some(OnnxOperation::Reshape),
+        _ => None,
     }
 }
 
@@ -164,9 +165,17 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found Const operation");
             Some(OperationType::Const)
         }
+        name if name == *"Conv" => {
+            println!("Found Conv operation");
+            Some(OperationType::Conv)
+        }
         name if name == *"MatMul" || name == *"Gemm" => {
             println!("Found matrix operation: {}", name);
             Some(OperationType::MatMul)
+        }
+        name if name == *"MaxPool" => {
+            println!("Found MaxPool operation: {}", name);
+            Some(OperationType::MaxPool)
         }
         name if name == *"EinSum" => {
             println!("Found matrix operation: {}", name);
@@ -210,6 +219,7 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_matmul_gate_generation() {
@@ -244,8 +254,8 @@ mod tests {
             out_dims: vec![2, 2],
             out_scale: 1,
             id: 0,
-            weights: None,
-            bias: None,
+            op_params: None,
+            attributes: HashMap::new(),
         };
         match identify_operation(&matmul_node) {
             Some(OnnxOperation::MatMul { m, n, k }) => {
@@ -263,8 +273,8 @@ mod tests {
             out_dims: vec![4],
             out_scale: 1,
             id: 0,
-            weights: None,
-            bias: None,
+            op_params: None,
+            attributes: HashMap::new(),
         };
         match identify_operation(&relu_node) {
             Some(OnnxOperation::Relu) => (),
@@ -278,8 +288,8 @@ mod tests {
             out_dims: vec![4],
             out_scale: 1,
             id: 0,
-            weights: None,
-            bias: None,
+            op_params: None,
+            attributes: HashMap::new(),
         };
         match identify_operation(&sigmoid_node) {
             Some(OnnxOperation::Sigmoid) => (),
@@ -293,8 +303,8 @@ mod tests {
             out_dims: vec![4],
             out_scale: 1,
             id: 0,
-            weights: None,
-            bias: None,
+            op_params: None,
+            attributes: HashMap::new(),
         };
         assert!(identify_operation(&input_node).is_none());
 
@@ -305,8 +315,8 @@ mod tests {
             out_dims: vec![4],
             out_scale: 1,
             id: 0,
-            weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
-            bias: None,
+            op_params: Some(vec![1.0, 2.0, 3.0, 4.0]),
+            attributes: HashMap::new(),
         };
         match identify_operation(&const_node) {
             Some(OnnxOperation::Const) => (),

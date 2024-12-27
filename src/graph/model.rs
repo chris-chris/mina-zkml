@@ -1,4 +1,5 @@
 use super::errors::GraphError;
+use super::utilities::handle_pool_spec;
 use chrono::Local;
 use instant;
 use log::debug;
@@ -9,6 +10,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
 };
+use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
 use tract_onnx::{prelude::*, tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
 use crate::zk::operations::identify_tract_operation;
@@ -31,6 +33,8 @@ pub enum OperationType {
     Const,
     RmAxis,
     Reshape,
+    Conv,
+    MaxPool,
 }
 
 /// Serializable version of OutletId
@@ -99,16 +103,16 @@ impl ParsedNodes {
         self.inputs.len()
     }
 
-    pub fn log_weights_and_biases(&self) -> Result<(), GraphError> {
+    pub fn log_op_params_and_biases(&self) -> Result<(), GraphError> {
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open("weights_biases_log.txt")
+            .open("op_params_biases_log.txt")
             .map_err(|_| GraphError::UnableToSaveModel)?;
 
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
 
-        writeln!(file, "\n[{}] Weights and Biases Analysis", timestamp)
+        writeln!(file, "\n[{}] Operation Params Analysis", timestamp)
             .map_err(|_| GraphError::UnableToSaveModel)?;
 
         writeln!(file, "----------------------------------------")
@@ -156,15 +160,15 @@ impl ParsedNodes {
                     }
 
                     // Values
-                    if let Some(weights) = &node.weights {
+                    if let Some(op_params) = &node.op_params {
                         writeln!(file, "\nAll Values:")
                             .map_err(|_| GraphError::UnableToSaveModel)?;
-                        writeln!(file, "Total elements: {}", weights.len())
+                        writeln!(file, "Total elements: {}", op_params.len())
                             .map_err(|_| GraphError::UnableToSaveModel)?;
 
                         // Write all values as a comma-separated list within brackets
                         write!(file, "[").map_err(|_| GraphError::UnableToSaveModel)?;
-                        for (i, &value) in weights.iter().enumerate() {
+                        for (i, &value) in op_params.iter().enumerate() {
                             if i > 0 {
                                 write!(file, ", ").map_err(|_| GraphError::UnableToSaveModel)?;
                             }
@@ -174,26 +178,31 @@ impl ParsedNodes {
                         writeln!(file, "]").map_err(|_| GraphError::UnableToSaveModel)?;
 
                         // Statistics
-                        let min = weights.iter().fold(f32::INFINITY, |a, &b| a.min(b));
-                        let max = weights.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-                        let sum: f32 = weights.iter().sum();
-                        let mean = sum / weights.len() as f32;
+                        let min = op_params.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+                        let max = op_params.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+                        let sum: f32 = op_params.iter().sum();
+                        let mean = sum / op_params.len() as f32;
 
                         // Count non-zero elements
-                        let non_zero_count = weights.iter().filter(|&&x| x != 0.0).count();
+                        let non_zero_count = op_params.iter().filter(|&&x| x != 0.0).count();
 
                         writeln!(file, "\nStatistics:")
                             .map_err(|_| GraphError::UnableToSaveModel)?;
-                        writeln!(file, "  Total elements: {}", weights.len())
+                        writeln!(file, "  Total elements: {}", op_params.len())
                             .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "  Non-zero elements: {}", non_zero_count)
                             .map_err(|_| GraphError::UnableToSaveModel)?;
-                        writeln!(file, "  Zero elements: {}", weights.len() - non_zero_count)
-                            .map_err(|_| GraphError::UnableToSaveModel)?;
+                        writeln!(
+                            file,
+                            "  Zero elements: {}",
+                            op_params.len() - non_zero_count
+                        )
+                        .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(
                             file,
                             "  Sparsity: {:.2}%",
-                            (weights.len() - non_zero_count) as f32 / weights.len() as f32 * 100.0
+                            (op_params.len() - non_zero_count) as f32 / op_params.len() as f32
+                                * 100.0
                         )
                         .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "  Min: {:.6}", min)
@@ -258,8 +267,8 @@ impl ParsedNodes {
                     NodeType::Node(node) => {
                         // Handle Const nodes
                         if matches!(node.op_type, OperationType::Const) {
-                            if let Some(weights) = &node.weights {
-                                node_outputs.insert(node_idx, vec![weights.clone()]);
+                            if let Some(op_params) = &node.op_params {
+                                node_outputs.insert(node_idx, vec![op_params.clone()]);
                             }
                             continue;
                         }
@@ -320,24 +329,165 @@ impl ParsedNodes {
         let result = match node.op_type {
             OperationType::Input => Ok(inputs.to_vec()),
             OperationType::Const => {
-                if let Some(weights) = &node.weights {
-                    Ok(vec![weights.clone()])
+                if let Some(op_params) = &node.op_params {
+                    Ok(vec![op_params.clone()])
                 } else {
-                    Err(GraphError::InvalidInputShape)
+                    Err(GraphError::InvalidInputShape(0))
                 }
             }
+            OperationType::Conv => {
+                if inputs.len() != 3 {
+                    return Err(GraphError::InvalidInputShape(1));
+                }
+
+                // Parse dimensions from inputs[0] and weight
+                let input_node = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+
+                // Extract weights and biases
+                let weight = match self.nodes.get(&node.inputs[1].0) {
+                    Some(NodeType::Node(SerializableNode {
+                        op_type: OperationType::Const,
+                        op_params: Some(weights),
+                        ..
+                    })) => weights.clone(),
+                    _ => return Err(GraphError::InvalidInputShape(2)),
+                };
+                let bias = match self.nodes.get(&node.inputs[2].0) {
+                    Some(NodeType::Node(SerializableNode {
+                        op_type: OperationType::Const,
+                        op_params: Some(bias),
+                        ..
+                    })) => bias.clone(),
+                    _ => return Err(GraphError::InvalidInputShape(3)),
+                };
+
+                if let NodeType::Node(input) = input_node {
+                    let input_dims = &input.out_dims;
+                    let batch_size = input_dims[0] as i32; // N
+                    let input_channels = input_dims[1] as i32; // C
+                    let input_height = input_dims[2] as i32; // H
+                    let input_width = input_dims[3] as i32; // W
+
+                    // Parse Conv parameters
+                    let kernel_shape = node
+                        .attributes
+                        .get("kernel_shape")
+                        .ok_or(GraphError::InvalidInputShape(4))?
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+                    let strides = node
+                        .attributes
+                        .get("strides")
+                        .unwrap_or(&vec![1, 1])
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+                    let padding = node
+                        .attributes
+                        .get("padding")
+                        .unwrap_or(&vec![0, 0, 0, 0])
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+                    let dilations = node
+                        .attributes
+                        .get("dilations")
+                        .unwrap_or(&vec![1, 1])
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+
+                    // Use Conv node output dimensions directly
+                    let output_dims = &node.out_dims;
+                    let output_channels = output_dims[1] as i32;
+                    let output_height = output_dims[2] as i32;
+                    let output_width = output_dims[3] as i32;
+
+                    // Validate weight shape
+                    assert_eq!(
+                        weight.len() as i32,
+                        output_channels * input_channels * kernel_shape[0] * kernel_shape[1],
+                        "Weight dimensions do not match expected shape."
+                    );
+
+                    // Initialize output tensor
+                    let mut output = vec![
+                        0.0;
+                        (batch_size * output_channels * output_height * output_width)
+                            as usize
+                    ];
+
+                    // Perform convolution
+                    for n in 0..batch_size {
+                        for oc in 0..output_channels {
+                            for oh in 0..output_height {
+                                for ow in 0..output_width {
+                                    let mut sum = 0.0;
+                                    for ic in 0..input_channels {
+                                        for kh in 0..kernel_shape[0] {
+                                            for kw in 0..kernel_shape[1] {
+                                                let ih = oh * strides[0] + kh * dilations[0]
+                                                    - padding[0];
+                                                let iw = ow * strides[1] + kw * dilations[1]
+                                                    - padding[1];
+                                                if ih >= 0
+                                                    && ih < input_height
+                                                    && iw >= 0
+                                                    && iw < input_width
+                                                {
+                                                    // Proper indexing of the input tensor
+                                                    let input_idx = (((n * input_channels + ic)
+                                                        * input_height
+                                                        + ih)
+                                                        * input_width
+                                                        + iw)
+                                                        as usize;
+                                                    let weight_idx = (((oc * input_channels + ic)
+                                                        * kernel_shape[0]
+                                                        + kh)
+                                                        * kernel_shape[1]
+                                                        + kw)
+                                                        as usize;
+                                                    sum +=
+                                                        inputs[0][input_idx] * weight[weight_idx];
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Add bias
+                                    sum += bias[oc as usize];
+                                    let output_idx =
+                                        (((n * output_channels + oc) * output_height + oh)
+                                            * output_width
+                                            + ow) as usize;
+                                    output[output_idx] = sum;
+                                }
+                            }
+                        }
+                    }
+
+                    Ok(vec![output])
+                } else {
+                    Err(GraphError::InvalidNodeType)
+                }
+            }
+
             OperationType::MatMul | OperationType::EinSum => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(5));
                 }
 
                 let input = &inputs[0]; // Shape: [784]
-                let weights = if inputs.len() > 1 {
+                let op_params = if inputs.len() > 1 {
                     &inputs[1]
-                } else if let Some(weights) = &node.weights {
-                    weights
+                } else if let Some(op_params) = &node.op_params {
+                    op_params
                 } else {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(6));
                 };
 
                 let input_dim = input.len(); // 784
@@ -346,8 +496,8 @@ impl ParsedNodes {
                 let weight_cols = input_dim; // 784 (PyTorch convention)
 
                 // Verify dimensions match
-                if weights.len() != weight_rows * weight_cols {
-                    return Err(GraphError::InvalidInputShape);
+                if op_params.len() != weight_rows * weight_cols {
+                    return Err(GraphError::InvalidInputShape(7));
                 }
 
                 let mut output = vec![0.0; output_dim];
@@ -356,7 +506,7 @@ impl ParsedNodes {
                 output.iter_mut().enumerate().for_each(|(i, out)| {
                     *out = input.iter().enumerate().fold(0.0, |sum, (j, &input_val)| {
                         let weight_idx = i * input_dim + j;
-                        sum + input_val * weights[weight_idx]
+                        sum + input_val * op_params[weight_idx]
                     });
                 });
 
@@ -366,20 +516,18 @@ impl ParsedNodes {
                 let a = &inputs[0];
                 let b = if inputs.len() > 1 {
                     &inputs[1]
-                } else if let Some(bias) = &node.bias {
-                    bias
                 } else {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(8));
                 };
 
                 if a.len() != b.len() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(9));
                 }
                 Ok(vec![a.iter().zip(b.iter()).map(|(&x, &y)| x + y).collect()])
             }
             OperationType::Relu | OperationType::Max => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(10));
                 }
 
                 let result = inputs[0].iter().map(|&x| x.max(0.0)).collect();
@@ -387,12 +535,12 @@ impl ParsedNodes {
             }
             OperationType::Sigmoid => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(11));
                 }
 
                 let expected_size: usize = node.out_dims.iter().product();
                 if inputs[0].len() != expected_size {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(12));
                 }
 
                 Ok(vec![inputs[0]
@@ -410,23 +558,121 @@ impl ParsedNodes {
             }
             OperationType::RmAxis => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(13));
                 }
 
                 let expected_size: usize = node.out_dims.iter().product();
                 let input = &inputs[0];
 
                 if input.len() != expected_size {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(14));
                 }
 
                 Ok(vec![input.clone()])
             }
             OperationType::Reshape => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape);
+                    return Err(GraphError::InvalidInputShape(15));
                 }
                 Ok(vec![inputs[0].clone()])
+            }
+            OperationType::MaxPool => {
+                if inputs.is_empty() {
+                    return Err(GraphError::InvalidInputShape(16));
+                }
+
+                let input_node = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+
+                if let NodeType::Node(input) = input_node {
+                    let input_dims = &input.out_dims;
+                    let batch_size = input_dims[0] as i32; // N
+                    let input_channels = input_dims[1] as i32; // C
+                    let input_height = input_dims[2] as i32; // H
+                    let input_width = input_dims[3] as i32; // W
+                    println!("node id: {:?}", node.id);
+                    println!("node attributes: {:?}", node.attributes);
+                    // Parse MaxPool parameters
+                    let kernel_shape = node
+                        .attributes
+                        .get("kernel_shape")
+                        .ok_or(GraphError::InvalidInputShape(17))?
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+                    let strides = node
+                        .attributes
+                        .get("strides")
+                        .unwrap_or(&vec![1, 1])
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+                    let padding = node
+                        .attributes
+                        .get("padding")
+                        .unwrap_or(&vec![0, 0, 0, 0])
+                        .iter()
+                        .map(|&x| x as i32)
+                        .collect::<Vec<i32>>();
+
+                    // Calculate output dimensions
+                    let output_height =
+                        (input_height + padding[0] + padding[2] - kernel_shape[0]) / strides[0] + 1;
+                    let output_width =
+                        (input_width + padding[1] + padding[3] - kernel_shape[1]) / strides[1] + 1;
+
+                    // Initialize output tensor
+                    let mut output = vec![
+                        0.0;
+                        (batch_size * input_channels * output_height * output_width)
+                            as usize
+                    ];
+
+                    // Perform MaxPool
+                    for n in 0..batch_size {
+                        for c in 0..input_channels {
+                            for oh in 0..output_height {
+                                for ow in 0..output_width {
+                                    let mut max_value = f32::NEG_INFINITY;
+
+                                    for kh in 0..kernel_shape[0] {
+                                        for kw in 0..kernel_shape[1] {
+                                            let ih = oh * strides[0] + kh - padding[0];
+                                            let iw = ow * strides[1] + kw - padding[1];
+
+                                            // Ensure index is within bounds
+                                            if ih >= 0
+                                                && ih < input_height
+                                                && iw >= 0
+                                                && iw < input_width
+                                            {
+                                                let input_idx =
+                                                    (((n * input_channels + c) * input_height + ih)
+                                                        * input_width
+                                                        + iw)
+                                                        as usize;
+
+                                                max_value = max_value.max(inputs[0][input_idx]);
+                                            }
+                                        }
+                                    }
+
+                                    let output_idx =
+                                        (((n * input_channels + c) * output_height + oh)
+                                            * output_width
+                                            + ow) as usize;
+                                    output[output_idx] = max_value;
+                                }
+                            }
+                        }
+                    }
+
+                    Ok(vec![output])
+                } else {
+                    Err(GraphError::InvalidNodeType)
+                }
             }
         };
 
@@ -503,8 +749,10 @@ pub struct SerializableNode {
     pub id: usize,
     /// Operation type
     pub op_type: OperationType,
-    pub weights: Option<Vec<f32>>,
-    pub bias: Option<Vec<f32>>,
+    /// Parameters (op_params or bias)
+    pub op_params: Option<Vec<f32>>,
+    /// Attributes for the operations
+    pub attributes: HashMap<String, Vec<usize>>,
 }
 
 impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
@@ -526,24 +774,30 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
             OperationType::RmAxis // Default to RmAxis for unknown operations
         };
 
-        println!("Node From : {:?}", node);
-        println!("Node op_type: {:?}", op_name.as_ref());
-
-        // Extract weights and biases based on node type
-        let (weights, bias) = match op_name.as_ref() {
+        // Extract op_params Or attributes
+        let op_params = match op_name.as_ref() {
             "Const" => {
                 if let Some(const_op) = node.op.downcast_ref::<Const>() {
                     if let Ok(tensor_data) = const_op.0.as_slice::<f32>() {
-                        (Some(tensor_data.to_vec()), None)
+                        Some(tensor_data.to_vec())
                     } else {
-                        (None, None)
+                        None
                     }
                 } else {
-                    (None, None)
+                    None
                 }
             }
-            _ => (None, None),
+
+            _ => None,
         };
+
+        // Extract convolution attributes
+        let mut attributes = HashMap::new();
+        if let Some(op) = node.op.as_any().downcast_ref::<Conv>() {
+            handle_pool_spec(&mut attributes, &op.pool_spec, &Some(op.kernel_fmt));
+        } else if let Some(op) = node.op.as_any().downcast_ref::<MaxPool>() {
+            handle_pool_spec(&mut attributes, &op.pool_spec, &None);
+        }
 
         SerializableNode {
             inputs: node.inputs.iter().map(|o| (o.node, o.slot)).collect(),
@@ -560,8 +814,8 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
                 .map_or(1, |k| *k.to_scalar::<i32>().unwrap_or(&1)),
             id: node.id,
             op_type,
-            weights,
-            bias,
+            op_params,
+            attributes,
         }
     }
 }
@@ -880,7 +1134,7 @@ impl Model {
                 None => {
                     debug!("Processing regular node {}", idx);
 
-                    // Create the node with proper operation type and weights/biases
+                    // Create the node with proper operation type and op_params
                     let serializable_node = SerializableNode::from(node);
                     nodes.insert(idx, NodeType::Node(serializable_node));
                 }

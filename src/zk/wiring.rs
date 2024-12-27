@@ -106,7 +106,6 @@ impl ModelCircuitBuilder {
 
     pub fn build_circuit(&mut self, model: &Model) -> (Vec<CircuitGate<Fp>>, usize, usize) {
         let mut gates = Vec::new();
-
         // Calculate total number of public inputs
         let num_public: usize = model
             .graph
@@ -137,6 +136,14 @@ impl ModelCircuitBuilder {
                         circuit_size += output_size;
                     }
                     OperationType::Add => {
+                        let output_size = node.out_dims.iter().product::<usize>();
+                        circuit_size += output_size;
+                    }
+                    OperationType::Conv => {
+                        let output_size = node.out_dims.iter().product::<usize>();
+                        circuit_size += output_size;
+                    }
+                    OperationType::MaxPool => {
                         let output_size = node.out_dims.iter().product::<usize>();
                         circuit_size += output_size;
                     }
@@ -194,6 +201,36 @@ impl ModelCircuitBuilder {
                         self.current_row += output_size;
                     }
                     OperationType::Add => {
+                        let output_size: usize = node.out_dims.iter().product();
+
+                        // Add computation gates
+                        for i in 0..output_size {
+                            gates.push(CircuitGate {
+                                typ: GateType::Generic,
+                                wires: Self::create_wires(self.current_row + i),
+                                coeffs: vec![Fp::from(1u64)],
+                            });
+                        }
+
+                        intermediate_rows.insert(*idx, self.current_row);
+                        self.current_row += output_size;
+                    }
+                    OperationType::Conv => {
+                        let output_size: usize = node.out_dims.iter().product();
+
+                        // Add computation gates
+                        for i in 0..output_size {
+                            gates.push(CircuitGate {
+                                typ: GateType::Generic,
+                                wires: Self::create_wires(self.current_row + i),
+                                coeffs: vec![Fp::from(1u64)],
+                            });
+                        }
+
+                        intermediate_rows.insert(*idx, self.current_row);
+                        self.current_row += output_size;
+                    }
+                    OperationType::MaxPool => {
                         let output_size: usize = node.out_dims.iter().product();
 
                         // Add computation gates

@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 use mina_zkml::{
     graph::model::{Model, RunArgs, VarVisibility, Visibility},
-    zk::proof::{ProverSystem, ProverOutput},
+    zk::proof::{ProverOutput, ProverSystem},
 };
 use prettytable::{row, Table};
 use serde_json::{self, json, Value};
@@ -137,6 +137,7 @@ fn validate_input_json(input_data: &Value) -> Result<Vec<Vec<f32>>> {
     Ok(result)
 }
 
+#[allow(deprecated)]
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -346,13 +347,12 @@ fn main() -> Result<()> {
             };
 
             // Deserialize and verify the proof
-            let proof_bytes = base64::
-                decode(
-                    proof_data["proof"]
-                        .as_str()
-                        .ok_or_else(|| anyhow!("Missing 'proof' field in proof file"))?,
-                )
-                .context("Failed to decode base64 proof data")?;
+            let proof_bytes = base64::decode(
+                proof_data["proof"]
+                    .as_str()
+                    .ok_or_else(|| anyhow!("Missing 'proof' field in proof file"))?,
+            )
+            .context("Failed to decode base64 proof data")?;
             let prover_output = deserialize_prover_output(&proof_bytes)?;
 
             let is_valid = verifier

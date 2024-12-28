@@ -48,7 +48,8 @@ fn test_scenario(visibility: VarVisibility) -> Result<(), Box<dyn std::error::Er
     let output_for_verify = None; // Output is private
 
     // Convert input to correct format for verification
-    let formatted_input: Vec<Vec<f32>> = input.iter()
+    let formatted_input: Vec<Vec<f32>> = input
+        .iter()
         .map(|row| row.iter().map(|&x| x as f32).collect())
         .collect();
 

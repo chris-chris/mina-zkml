@@ -1,37 +1,39 @@
 #![cfg(feature = "wasm")]
 
-extern crate wasm_bindgen;
-extern crate js_sys;
-extern crate web_sys;
 extern crate console_error_panic_hook;
+extern crate js_sys;
 extern crate serde_wasm_bindgen;
+extern crate wasm_bindgen;
 extern crate wasm_bindgen_futures;
+extern crate web_sys;
 
-use wasm_bindgen::prelude::*;
+use crate::graph::model::{
+    GraphLoadResult, Model, ParsedNodes, RunArgs, VarVisibility, Visibility,
+};
+use crate::zk::proof::{ProverOutput, ProverSystem, VerifierSystem};
+use crate::zk::ZkOpeningProof;
+use base64::prelude::*;
+use groupmap::GroupMap;
 use js_sys::Promise;
-use serde::{Serialize, Deserialize};
-use crate::graph::model::{Model, RunArgs, VarVisibility, Visibility, GraphLoadResult, ParsedNodes};
-use crate::zk::proof::{ProverSystem, VerifierSystem, ProverOutput};
-use mina_curves::pasta::{Fp, Vesta, VestaParameters};
 use kimchi::{
+    circuits::polynomials::permutation::{vanishes_on_last_n_rows, zk_w},
     proof::ProverProof,
     verifier_index::VerifierIndex,
-    circuits::polynomials::permutation::{vanishes_on_last_n_rows, zk_w},
 };
+use mina_curves::pasta::{Fp, Vesta, VestaParameters};
 use mina_poseidon::{
     constants::PlonkSpongeConstantsKimchi,
     sponge::{DefaultFqSponge, DefaultFrSponge},
 };
-use groupmap::GroupMap;
-use crate::zk::ZkOpeningProof;
-use wasm_bindgen_futures::future_to_promise;
-use web_sys::console;
+use once_cell::sync::OnceCell;
+use poly_commitment::{commitment::CommitmentCurve, ipa::SRS, SRS as _};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tract_onnx::prelude::*;
 use tract_onnx::tract_hir::internal::GenericFactoid;
-use base64::prelude::*;
-use poly_commitment::{commitment::CommitmentCurve, ipa::SRS, SRS as _};
-use std::sync::Arc;
-use once_cell::sync::OnceCell;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::future_to_promise;
+use web_sys::console;
 
 type SpongeParams = PlonkSpongeConstantsKimchi;
 type BaseSponge = DefaultFqSponge<VestaParameters, SpongeParams>;
@@ -114,8 +116,7 @@ impl From<ProverOutput> for WasmProverOutput {
     fn from(output: ProverOutput) -> Self {
         Self {
             output: output.output,
-            proof: serde_json::to_string(&output.proof)
-                .expect("Failed to serialize proof"),
+            proof: serde_json::to_string(&output.proof).expect("Failed to serialize proof"),
             verifier_index: serde_json::to_string(&output.verifier_index)
                 .expect("Failed to serialize verifier index"),
         }
@@ -124,14 +125,11 @@ impl From<ProverOutput> for WasmProverOutput {
 
 #[wasm_bindgen]
 pub struct WasmModel {
-    inner: Model
+    inner: Model,
 }
 
 impl WasmModel {
-    fn load_onnx_from_bytes(
-        bytes: &[u8],
-        run_args: &RunArgs,
-    ) -> Result<GraphLoadResult, JsValue> {
+    fn load_onnx_from_bytes(bytes: &[u8], run_args: &RunArgs) -> Result<GraphLoadResult, JsValue> {
         let mut model = tract_onnx::onnx()
             .model_for_read(&mut std::io::Cursor::new(bytes))
             .map_err(|e| JsValue::from_str(&format!("Failed to load model from bytes: {}", e)))?;
@@ -186,19 +184,23 @@ impl WasmModel {
 #[wasm_bindgen]
 impl WasmModel {
     #[wasm_bindgen(constructor)]
-    pub fn new(model_bytes: &[u8], run_args_js: JsValue, visibility_js: JsValue) -> Result<WasmModel, JsValue> {
+    pub fn new(
+        model_bytes: &[u8],
+        run_args_js: JsValue,
+        visibility_js: JsValue,
+    ) -> Result<WasmModel, JsValue> {
         console_error_panic_hook::set_once();
 
         let run_args: JsRunArgs = serde_wasm_bindgen::from_value(run_args_js)
             .map_err(|e| JsValue::from_str(&format!("Invalid run args: {}", e)))?;
-        
+
         let run_args = RunArgs {
             variables: run_args.variables,
         };
 
         let visibility: JsVisibility = serde_wasm_bindgen::from_value(visibility_js)
             .map_err(|e| JsValue::from_str(&format!("Invalid visibility: {}", e)))?;
-        
+
         let visibility = VarVisibility {
             input: match visibility.input.as_str() {
                 "Public" => Visibility::Public,
@@ -213,7 +215,7 @@ impl WasmModel {
         };
 
         let (model, symbol_values) = Self::load_onnx_from_bytes(model_bytes, &run_args)?;
-        
+
         let nodes = Model::nodes_from_graph(&model, visibility.clone(), symbol_values)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse nodes: {}", e)))?;
 
@@ -250,7 +252,11 @@ pub struct WasmVerifierSystem {
 #[wasm_bindgen]
 impl WasmProverSystem {
     #[wasm_bindgen(constructor)]
-    pub fn new(model_bytes: &[u8], run_args_js: JsValue, visibility_js: JsValue) -> Result<WasmProverSystem, JsValue> {
+    pub fn new(
+        model_bytes: &[u8],
+        run_args_js: JsValue,
+        visibility_js: JsValue,
+    ) -> Result<WasmProverSystem, JsValue> {
         let wasm_model = WasmModel::new(model_bytes, run_args_js, visibility_js)?;
         let inner = ProverSystem::new(&wasm_model.inner);
         Ok(WasmProverSystem { inner })
@@ -264,10 +270,11 @@ impl WasmProverSystem {
         let prover_system = self.inner.clone();
 
         let future = async move {
-            let result = prover_system.prove(&inputs)
+            let result = prover_system
+                .prove(&inputs)
                 .map(WasmProverOutput::from)
                 .map_err(|e| JsValue::from_str(&format!("Failed to generate proof: {}", e)))?;
-            
+
             serde_wasm_bindgen::to_value(&result)
                 .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
         };
@@ -278,7 +285,7 @@ impl WasmProverSystem {
     #[wasm_bindgen]
     pub fn verifier(&self) -> WasmVerifierSystem {
         WasmVerifierSystem {
-            inner: self.inner.verifier()
+            inner: self.inner.verifier(),
         }
     }
 }
@@ -289,29 +296,33 @@ impl WasmVerifierSystem {
     pub fn serialize(&self) -> Result<String, JsValue> {
         // Serialize verifier index using MessagePack
         let mut buf = Vec::new();
-        rmp_serde::encode::write_named(&mut buf, &self.inner.verifier_index)
-            .map_err(|e| JsValue::from_str(&format!("Failed to serialize verifier index: {}", e)))?;
-        
+        rmp_serde::encode::write_named(&mut buf, &self.inner.verifier_index).map_err(|e| {
+            JsValue::from_str(&format!("Failed to serialize verifier index: {}", e))
+        })?;
+
         Ok(BASE64_STANDARD.encode(&buf))
     }
 
     #[wasm_bindgen]
     pub fn deserialize(data: &str) -> Result<WasmVerifierSystem, JsValue> {
-        let bytes = BASE64_STANDARD.decode(data)
+        let bytes = BASE64_STANDARD
+            .decode(data)
             .map_err(|e| JsValue::from_str(&format!("Failed to decode base64: {}", e)))?;
-            
+
         // Create SRS for the loaded verifier
         let srs = Arc::new(SRS::<Vesta>::create(4096));
-        
+
         // Deserialize verifier index
-        let mut loaded_verifier_index: VerifierIndex<Vesta, ZkOpeningProof> = rmp_serde::decode::from_slice(&bytes)
-            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize verifier index: {}", e)))?;
-        
+        let mut loaded_verifier_index: VerifierIndex<Vesta, ZkOpeningProof> =
+            rmp_serde::decode::from_slice(&bytes).map_err(|e| {
+                JsValue::from_str(&format!("Failed to deserialize verifier index: {}", e))
+            })?;
+
         // Set the SRS and other skipped fields in the loaded verifier index
         loaded_verifier_index.srs = Arc::clone(&srs);
 
         Ok(WasmVerifierSystem {
-            inner: VerifierSystem::new(loaded_verifier_index)
+            inner: VerifierSystem::new(loaded_verifier_index),
         })
     }
 
@@ -329,46 +340,48 @@ impl WasmVerifierSystem {
         public_outputs_js: &JsValue,
     ) -> Result<bool, JsValue> {
         console::log_1(&"Starting verification...".into());
-        
+
         let proof_str = proof_js
             .as_string()
             .ok_or_else(|| JsValue::from_str("Invalid proof: not a string"))?;
-        
+
         console::log_1(&format!("Parsing proof of length: {}", proof_str.len()).into());
-        
-        let proof: ProverProof<Vesta, ZkOpeningProof> = serde_json::from_str(&proof_str)
-            .map_err(|e| {
+
+        let proof: ProverProof<Vesta, ZkOpeningProof> =
+            serde_json::from_str(&proof_str).map_err(|e| {
                 console::error_1(&format!("Failed to parse proof JSON: {}", e).into());
                 JsValue::from_str(&format!("Failed to parse proof: {}", e))
             })?;
-        
+
         console::log_1(&"Successfully parsed proof".into());
 
-        let public_inputs: Option<Vec<Vec<f32>>> = if !public_inputs_js.is_null() && !public_inputs_js.is_undefined() {
+        let public_inputs: Option<Vec<Vec<f32>>> = if !public_inputs_js.is_null()
+            && !public_inputs_js.is_undefined()
+        {
             console::log_1(&"Parsing public inputs...".into());
-            let inputs = serde_wasm_bindgen::from_value(public_inputs_js.clone())
-                .map_err(|e| {
-                    console::error_1(&format!("Failed to parse public inputs: {}", e).into());
-                    JsValue::from_str(&format!("Invalid public inputs: {}", e))
-                })?;
+            let inputs = serde_wasm_bindgen::from_value(public_inputs_js.clone()).map_err(|e| {
+                console::error_1(&format!("Failed to parse public inputs: {}", e).into());
+                JsValue::from_str(&format!("Invalid public inputs: {}", e))
+            })?;
             console::log_1(&"Successfully parsed public inputs".into());
             Some(inputs)
         } else {
             None
         };
 
-        let public_outputs: Option<Vec<Vec<f32>>> = if !public_outputs_js.is_null() && !public_outputs_js.is_undefined() {
-            console::log_1(&"Parsing public outputs...".into());
-            let outputs = serde_wasm_bindgen::from_value(public_outputs_js.clone())
-                .map_err(|e| {
-                    console::error_1(&format!("Failed to parse public outputs: {}", e).into());
-                    JsValue::from_str(&format!("Invalid public outputs: {}", e))
-                })?;
-            console::log_1(&"Successfully parsed public outputs".into());
-            Some(outputs)
-        } else {
-            None
-        };
+        let public_outputs: Option<Vec<Vec<f32>>> =
+            if !public_outputs_js.is_null() && !public_outputs_js.is_undefined() {
+                console::log_1(&"Parsing public outputs...".into());
+                let outputs =
+                    serde_wasm_bindgen::from_value(public_outputs_js.clone()).map_err(|e| {
+                        console::error_1(&format!("Failed to parse public outputs: {}", e).into());
+                        JsValue::from_str(&format!("Invalid public outputs: {}", e))
+                    })?;
+                console::log_1(&"Successfully parsed public outputs".into());
+                Some(outputs)
+            } else {
+                None
+            };
 
         // Setup group map for verification
         let group_map = <Vesta as CommitmentCurve>::Map::setup();
@@ -415,7 +428,9 @@ impl WasmVerifierSystem {
         //     &proof,
         //     &public_values,
         // );
-        let result = self.inner.verify(&proof, public_inputs.as_deref(), public_outputs.as_deref());
+        let result = self
+            .inner
+            .verify(&proof, public_inputs.as_deref(), public_outputs.as_deref());
 
         match result {
             Ok(_) => {

@@ -28,7 +28,7 @@ type ScalarSponge = DefaultFrSponge<Fp, SpongeParams>;
 /// Result type containing model output (if public) and its proof
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ProverOutput {
-    pub output: Option<Vec<Vec<f32>>>, // Only Some if output visibility is Public 
+    pub output: Option<Vec<Vec<f32>>>, // Only Some if output visibility is Public
     pub proof: ProverProof<Vesta, ZkOpeningProof>,
     pub prover_index: ProverIndex<Vesta, ZkOpeningProof>,
     pub verifier_index: VerifierIndex<Vesta, ZkOpeningProof>,
@@ -132,28 +132,33 @@ impl ProverSystem {
     /// Convert f32 to field element with overflow protection
     fn f32_to_field(value: f32) -> Fp {
         const SCALE: f32 = 1_000_000.0; // Increased precision
-        const EPSILON: f32 = 1e-6;       // Small number threshold
+        const EPSILON: f32 = 1e-6; // Small number threshold
         const MAX_SAFE_VALUE: f32 = ((u64::MAX as f64) / 1_000_000.0) as f32;
-        
+
         if value.abs() < EPSILON {
             return Fp::zero();
         }
 
         // Check for overflow
         if value.abs() > MAX_SAFE_VALUE {
-            println!("Warning: Value {} exceeds safe range, clamping to ±{}", value, MAX_SAFE_VALUE);
-            let clamped = if value < 0.0 { -MAX_SAFE_VALUE } else { MAX_SAFE_VALUE };
+            println!(
+                "Warning: Value {} exceeds safe range, clamping to ±{}",
+                value, MAX_SAFE_VALUE
+            );
+            let clamped = if value < 0.0 {
+                -MAX_SAFE_VALUE
+            } else {
+                MAX_SAFE_VALUE
+            };
             if clamped < 0.0 {
                 -Fp::from((-clamped * SCALE) as u64)
             } else {
                 Fp::from((clamped * SCALE) as u64)
             }
-        } else {
-            if value < 0.0 {
+        } else if value < 0.0 {
                 -Fp::from((-value * SCALE) as u64)
-            } else {
-                Fp::from((value * SCALE) as u64)
-            }
+        } else {
+            Fp::from((value * SCALE) as u64)
         }
     }
 
@@ -391,29 +396,35 @@ impl VerifierSystem {
     /// Convert f32 to field element with overflow protection
     fn f32_to_field(value: f32) -> Fp {
         const SCALE: f32 = 1_000_000.0; // Match ProverSystem scale
-        const EPSILON: f32 = 1e-6;       // Small number threshold
+        const EPSILON: f32 = 1e-6; // Small number threshold
         const MAX_SAFE_VALUE: f32 = ((u64::MAX as f64) / 1_000_000.0) as f32;
-        
+
         if value.abs() < EPSILON {
             return Fp::zero();
         }
 
         // Check for overflow
         if value.abs() > MAX_SAFE_VALUE {
-            println!("Warning: Value {} exceeds safe range, clamping to ±{}", value, MAX_SAFE_VALUE);
-            let clamped = if value < 0.0 { -MAX_SAFE_VALUE } else { MAX_SAFE_VALUE };
+            println!(
+                "Warning: Value {} exceeds safe range, clamping to ±{}",
+                value, MAX_SAFE_VALUE
+            );
+            let clamped = if value < 0.0 {
+                -MAX_SAFE_VALUE
+            } else {
+                MAX_SAFE_VALUE
+            };
             if clamped < 0.0 {
                 -Fp::from((-clamped * SCALE) as u64)
             } else {
                 Fp::from((clamped * SCALE) as u64)
             }
+        } else if value < 0.0 {
+            -Fp::from((-value * SCALE) as u64)
         } else {
-            if value < 0.0 {
-                -Fp::from((-value * SCALE) as u64)
-            } else {
-                Fp::from((value * SCALE) as u64)
-            }
+            Fp::from((value * SCALE) as u64)
         }
+
     }
 
     /// Verify a proof with optional public inputs/outputs
@@ -432,7 +443,10 @@ impl VerifierSystem {
                 println!("Processing input {}: {:?}", i, input);
                 for (j, &x) in input.iter().enumerate() {
                     let field_val = Self::f32_to_field(x);
-                    println!("Converting input {},{} = {} to field: {:?}", i, j, x, field_val);
+                    println!(
+                        "Converting input {},{} = {} to field: {:?}",
+                        i, j, x, field_val
+                    );
                     public_values.push(field_val);
                 }
             }
@@ -445,7 +459,10 @@ impl VerifierSystem {
                 println!("Processing output {}: {:?}", i, output);
                 for (j, &x) in output.iter().enumerate() {
                     let field_val = Self::f32_to_field(x);
-                    println!("Converting output {},{} = {} to field: {:?}", i, j, x, field_val);
+                    println!(
+                        "Converting output {},{} = {} to field: {:?}",
+                        i, j, x, field_val
+                    );
                     public_values.push(field_val);
                 }
             }

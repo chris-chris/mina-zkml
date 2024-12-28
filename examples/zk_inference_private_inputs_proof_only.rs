@@ -47,8 +47,7 @@ fn test_scenario(visibility: VarVisibility) -> Result<(), Box<dyn std::error::Er
     let input_for_verify = None; // Input is private
     let output_for_verify = None; // Output is private
 
-    let is_valid =
-        verifier.verify(&prover_output.proof, input_for_verify, output_for_verify)?;
+    let is_valid = verifier.verify(&prover_output.proof, input_for_verify, output_for_verify)?;
 
     println!("\nResults:");
     println!("Model execution successful: ✓");

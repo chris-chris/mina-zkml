@@ -169,7 +169,9 @@ fn test_error_handling_integration() {
 
 /// Build the full path for a model file based on the current directory
 fn build_model_path(model_relative_path: &str) -> String {
-    let base_path = std::path::Path::new("tests").join("models");  
+    //Get Current Path
+    let root_dir = std::env::current_dir().expect("Failed to get current directory");
+    let base_path = std::path::Path::new(&root_dir);
     let model_path = base_path.join(model_relative_path);
     println!("Model path: {:?}", model_path.display());
     let model_path_str = model_path

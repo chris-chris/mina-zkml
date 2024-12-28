@@ -1,6 +1,6 @@
 pub mod graph;
-pub mod zk;
 pub mod wasm;
+pub mod zk;
 
 #[cfg(test)]
 mod tests {}

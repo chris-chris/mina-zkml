@@ -44,8 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 6. Try to verify with modified output (should fail)
     println!("Verifying proof with modified output...");
-    let is_valid =
-        verifier.verify(&prover_output.proof, Some(&input), Some(&modified_output))?;
+    let is_valid = verifier.verify(&prover_output.proof, Some(&input), Some(&modified_output))?;
 
     println!("\nResults:");
     println!("Model execution successful: ✓");

@@ -156,7 +156,7 @@ impl ProverSystem {
                 Fp::from((clamped * SCALE) as u64)
             }
         } else if value < 0.0 {
-                -Fp::from((-value * SCALE) as u64)
+            -Fp::from((-value * SCALE) as u64)
         } else {
             Fp::from((value * SCALE) as u64)
         }
@@ -424,7 +424,6 @@ impl VerifierSystem {
         } else {
             Fp::from((value * SCALE) as u64)
         }
-
     }
 
     /// Verify a proof with optional public inputs/outputs

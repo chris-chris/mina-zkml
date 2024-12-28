@@ -28,7 +28,7 @@ type ScalarSponge = DefaultFrSponge<Fp, SpongeParams>;
 /// Result type containing model output (if public) and its proof
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ProverOutput {
-    pub output: Option<Vec<Vec<f32>>>, // Only Some if output visibility is Public
+    pub output: Option<Vec<Vec<f32>>>, // Only Some if output visibility is Public 
     pub proof: ProverProof<Vesta, ZkOpeningProof>,
     pub prover_index: ProverIndex<Vesta, ZkOpeningProof>,
     pub verifier_index: VerifierIndex<Vesta, ZkOpeningProof>,
@@ -36,7 +36,7 @@ pub struct ProverOutput {
 
 /// Creates prover and verifier indices for a model
 #[derive(Clone, Serialize, Deserialize)]
-pub struct ProofSystem {
+pub struct ProverSystem {
     pub prover_index: ProverIndex<Vesta, ZkOpeningProof>,
     pub verifier_index: VerifierIndex<Vesta, ZkOpeningProof>,
     #[serde(skip)]
@@ -45,10 +45,15 @@ pub struct ProofSystem {
     zk_rows: usize,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct VerifierSystem {
+    pub verifier_index: VerifierIndex<Vesta, ZkOpeningProof>,
+}
+
 type WitnessOutput = ([Vec<Fp>; COLUMNS], Vec<Vec<f32>>);
 
-impl ProofSystem {
-    /// Create a new proof system from a model
+impl ProverSystem {
+    /// Create a new prover system from a model
     pub fn new(model: &Model) -> Self {
         // Convert model to circuit gates
         let mut builder = ModelCircuitBuilder::new();
@@ -124,12 +129,31 @@ impl ProofSystem {
         }
     }
 
-    /// Convert f32 to field element
+    /// Convert f32 to field element with overflow protection
     fn f32_to_field(value: f32) -> Fp {
-        if value < 0.0 {
-            -Fp::from((-value * 1000.0) as u64)
+        const SCALE: f32 = 1_000_000.0; // Increased precision
+        const EPSILON: f32 = 1e-6;       // Small number threshold
+        const MAX_SAFE_VALUE: f32 = ((u64::MAX as f64) / 1_000_000.0) as f32;
+        
+        if value.abs() < EPSILON {
+            return Fp::zero();
+        }
+
+        // Check for overflow
+        if value.abs() > MAX_SAFE_VALUE {
+            println!("Warning: Value {} exceeds safe range, clamping to ±{}", value, MAX_SAFE_VALUE);
+            let clamped = if value < 0.0 { -MAX_SAFE_VALUE } else { MAX_SAFE_VALUE };
+            if clamped < 0.0 {
+                -Fp::from((-clamped * SCALE) as u64)
+            } else {
+                Fp::from((clamped * SCALE) as u64)
+            }
         } else {
-            Fp::from((value * 1000.0) as u64)
+            if value < 0.0 {
+                -Fp::from((-value * SCALE) as u64)
+            } else {
+                Fp::from((value * SCALE) as u64)
+            }
         }
     }
 
@@ -350,7 +374,49 @@ impl ProofSystem {
         })
     }
 
-    /// Verify a proof
+    /// Get the verifier system for this prover
+    pub fn verifier(&self) -> VerifierSystem {
+        VerifierSystem {
+            verifier_index: self.verifier_index.clone(),
+        }
+    }
+}
+
+impl VerifierSystem {
+    /// Create a new verifier system from a verifier index
+    pub fn new(verifier_index: VerifierIndex<Vesta, ZkOpeningProof>) -> Self {
+        Self { verifier_index }
+    }
+
+    /// Convert f32 to field element with overflow protection
+    fn f32_to_field(value: f32) -> Fp {
+        const SCALE: f32 = 1_000_000.0; // Match ProverSystem scale
+        const EPSILON: f32 = 1e-6;       // Small number threshold
+        const MAX_SAFE_VALUE: f32 = ((u64::MAX as f64) / 1_000_000.0) as f32;
+        
+        if value.abs() < EPSILON {
+            return Fp::zero();
+        }
+
+        // Check for overflow
+        if value.abs() > MAX_SAFE_VALUE {
+            println!("Warning: Value {} exceeds safe range, clamping to ±{}", value, MAX_SAFE_VALUE);
+            let clamped = if value < 0.0 { -MAX_SAFE_VALUE } else { MAX_SAFE_VALUE };
+            if clamped < 0.0 {
+                -Fp::from((-clamped * SCALE) as u64)
+            } else {
+                Fp::from((clamped * SCALE) as u64)
+            }
+        } else {
+            if value < 0.0 {
+                -Fp::from((-value * SCALE) as u64)
+            } else {
+                Fp::from((value * SCALE) as u64)
+            }
+        }
+    }
+
+    /// Verify a proof with optional public inputs/outputs
     pub fn verify(
         &self,
         proof: &ProverProof<Vesta, ZkOpeningProof>,
@@ -359,44 +425,60 @@ impl ProofSystem {
     ) -> Result<bool, String> {
         let mut public_values = Vec::new();
 
-        // Add public inputs if provided and input visibility is public
-        if self.model.visibility.input == Visibility::Public {
-            if let Some(inputs) = public_inputs {
-                public_values.extend(
-                    inputs
-                        .iter()
-                        .flat_map(|input| input.iter().map(|&x| Self::f32_to_field(x))),
-                );
-            } else {
-                return Err("Public inputs required for verification".to_string());
+        // Add public inputs if provided
+        if let Some(inputs) = public_inputs {
+            println!("Processing public inputs: {:?}", inputs);
+            for (i, input) in inputs.iter().enumerate() {
+                println!("Processing input {}: {:?}", i, input);
+                for (j, &x) in input.iter().enumerate() {
+                    let field_val = Self::f32_to_field(x);
+                    println!("Converting input {},{} = {} to field: {:?}", i, j, x, field_val);
+                    public_values.push(field_val);
+                }
             }
         }
 
-        // Add public outputs if provided and output visibility is public
-        if self.model.visibility.output == Visibility::Public {
-            if let Some(outputs) = public_outputs {
-                public_values.extend(
-                    outputs
-                        .iter()
-                        .flat_map(|output| output.iter().map(|&x| Self::f32_to_field(x))),
-                );
-            } else {
-                return Err("Public outputs required for verification".to_string());
+        // Add public outputs if provided
+        if let Some(outputs) = public_outputs {
+            println!("Processing public outputs: {:?}", outputs);
+            for (i, output) in outputs.iter().enumerate() {
+                println!("Processing output {}: {:?}", i, output);
+                for (j, &x) in output.iter().enumerate() {
+                    let field_val = Self::f32_to_field(x);
+                    println!("Converting output {},{} = {} to field: {:?}", i, j, x, field_val);
+                    public_values.push(field_val);
+                }
+            }
+        }
+
+        if !public_values.is_empty() {
+            println!("Verifying with {} public values", public_values.len());
+            if log::log_enabled!(log::Level::Debug) {
+                println!("Public values: {:?}", public_values);
             }
         }
 
         // Setup group map
         let group_map = <Vesta as CommitmentCurve>::Map::setup();
 
-        // Verify proof
-        kimchi::verifier::verify::<Vesta, BaseSponge, ScalarSponge, ZkOpeningProof>(
+        // Verify proof with public values
+        let result = kimchi::verifier::verify::<Vesta, BaseSponge, ScalarSponge, ZkOpeningProof>(
             &group_map,
             &self.verifier_index,
             proof,
             &public_values,
-        )
-        .map(|_| true)
-        .map_err(|e| format!("Failed to verify proof: {:?}", e))
+        );
+
+        match result {
+            Ok(_) => {
+                println!("Proof verification successful");
+                Ok(true)
+            }
+            Err(e) => {
+                println!("Proof verification failed: {:?}", e);
+                Err(format!("Failed to verify proof: {:?}", e))
+            }
+        }
     }
 }
 
@@ -421,22 +503,25 @@ mod tests {
         let model = Model::new("models/simple_perceptron.onnx", &run_args, &visibility)
             .expect("Failed to load model");
 
-        // Create proof system
-        let proof_system = ProofSystem::new(&model);
+        // Create prover system
+        let prover = ProverSystem::new(&model);
 
         // Create sample input
         let input = vec![vec![1.0, 0.5, -0.3, 0.8, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]];
 
         // Generate output and proof
-        let prover_output = proof_system.prove(&input).expect("Failed to create proof");
+        let prover_output = prover.prove(&input).expect("Failed to create proof");
         let outputs = prover_output.output.expect("Output should be public");
 
+        // Get verifier from prover
+        let verifier = prover.verifier();
+
         // Verify the proof
-        let result = proof_system
+        let result = verifier
             .verify(&prover_output.proof, Some(&input), Some(&outputs))
             .expect("Failed to verify proof");
 
-        assert!(result);
+        assert!(result, "Proof verification failed");
     }
 
     #[test]
@@ -454,21 +539,24 @@ mod tests {
         let model = Model::new("models/simple_perceptron.onnx", &run_args, &visibility)
             .expect("Failed to load model");
 
-        // Create proof system
-        let proof_system = ProofSystem::new(&model);
+        // Create prover system
+        let prover = ProverSystem::new(&model);
 
         // Create sample input
         let input = vec![vec![1.0, 0.5, -0.3, 0.8, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0]];
 
         // Generate proof
-        let prover_output = proof_system.prove(&input).expect("Failed to create proof");
+        let prover_output = prover.prove(&input).expect("Failed to create proof");
         assert!(prover_output.output.is_none(), "Output should be private");
 
+        // Get verifier from prover
+        let verifier = prover.verifier();
+
         // Verify the proof without public values
-        let result = proof_system
+        let result = verifier
             .verify(&prover_output.proof, None, None)
             .expect("Failed to verify proof");
 
-        assert!(result);
+        assert!(result, "Proof verification failed");
     }
 }

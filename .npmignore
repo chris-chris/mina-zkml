@@ -1,0 +1,14 @@
+examples/
+src/
+models/
+zkContractApp/
+pkg/
+target/
+tests/
+.gitattributes
+.gitignore
+Cargo.lock
+Cargo.toml
+HALO2_KIMCHI.md
+test_model.json
+test_proof.json

@@ -26,6 +26,5 @@ fn main() -> Result<(), GraphError> {
     // Execute model with private inputs and outputs
     let result = model.graph.execute(&inputs)?;
     println!("Private inference result: {:?}", result);
-
     Ok(())
 }

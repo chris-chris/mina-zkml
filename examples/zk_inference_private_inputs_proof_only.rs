@@ -1,3 +1,5 @@
+//! Example demonstrating zk inference with private inputs and proof only
+
 use mina_zkml::{
     graph::model::{Model, RunArgs, VarVisibility, Visibility},
     zk::proof::ProverSystem,
@@ -5,16 +7,21 @@ use mina_zkml::{
 use std::collections::HashMap;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n=== Testing Private Inputs + Proof Only ===");
+    test_scenario(VarVisibility {
+        input: Visibility::Private,
+        output: Visibility::Private,
+    })?;
+
+    Ok(())
+}
+
+fn test_scenario(visibility: VarVisibility) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Load the model
     println!("Loading model...");
     let mut variables = HashMap::new();
     variables.insert("batch_size".to_string(), 1);
     let run_args = RunArgs { variables };
-
-    let visibility = VarVisibility {
-        input: Visibility::Public,
-        output: Visibility::Public,
-    };
 
     let model = Model::new("models/simple_perceptron.onnx", &run_args, &visibility)?;
 
@@ -32,31 +39,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Generate output and proof
     println!("Generating output and proof...");
     let prover_output = prover.prove(&input)?;
-    let output = prover_output
-        .output
-        .as_ref()
-        .expect("Output should be public");
-    println!("Model output: {:?}", output);
 
-    // 5. Create modified output (simulating malicious behavior)
-    let mut modified_output = output.clone();
-    modified_output[0][0] += 1.0; // Modify first output value
+    println!("Both input and output are private");
 
-    // 6. Try to verify with modified output (should fail)
-    println!("Verifying proof with modified output...");
+    // 5. Verify the proof
+    println!("Verifying proof...");
+    let input_for_verify = None; // Input is private
+    let output_for_verify = None; // Output is private
+
     let is_valid =
-        verifier.verify(&prover_output.proof, Some(&input), Some(&modified_output))?;
+        verifier.verify(&prover_output.proof, input_for_verify, output_for_verify)?;
 
     println!("\nResults:");
     println!("Model execution successful: ✓");
     println!("Proof creation successful: ✓");
     println!(
-        "Modified output verification: {}",
-        if !is_valid {
-            "✗ Invalid (Expected)"
-        } else {
-            "✓ Valid (Unexpected!)"
-        }
+        "Proof verification: {}",
+        if is_valid { "✓ Valid" } else { "✗ Invalid" }
     );
 
     Ok(())

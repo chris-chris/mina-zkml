@@ -13,11 +13,12 @@
     "allowJs": true,
     "declaration": true,
     "sourceMap": true,
+    "composite": true,
     "resolveJsonModule": true,
     "paths": {
       "../pkg/*": ["./pkg/*"]
     }
   },
   "include": ["src/**/*", "pkg/**/*"],
-  "exclude": ["node_modules", "build"]
+  "exclude": ["node_modules", "build", "src/o1js-bindings"]
 }

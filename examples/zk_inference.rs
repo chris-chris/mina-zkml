@@ -1,6 +1,6 @@
 use mina_zkml::{
     graph::model::{Model, RunArgs, VarVisibility, Visibility},
-    zk::proof::ProofSystem,
+    zk::proof::ProverSystem,
 };
 use std::collections::HashMap;
 
@@ -36,9 +36,10 @@ fn test_scenario(visibility: VarVisibility) -> Result<(), Box<dyn std::error::Er
 
     let model = Model::new("models/simple_perceptron.onnx", &run_args, &visibility)?;
 
-    // 2. Create proof system
-    println!("Creating proof system...");
-    let proof_system = ProofSystem::new(&model);
+    // 2. Create prover system
+    println!("Creating prover system...");
+    let prover = ProverSystem::new(&model);
+    let verifier = prover.verifier();
 
     // 3. Create sample input (with proper padding to size 10)
     let input = vec![vec![
@@ -48,7 +49,7 @@ fn test_scenario(visibility: VarVisibility) -> Result<(), Box<dyn std::error::Er
 
     // 4. Generate output and proof
     println!("Generating output and proof...");
-    let prover_output = proof_system.prove(&input)?;
+    let prover_output = prover.prove(&input)?;
 
     // Print output if public
     if let Some(output) = &prover_output.output {
@@ -72,7 +73,7 @@ fn test_scenario(visibility: VarVisibility) -> Result<(), Box<dyn std::error::Er
     };
 
     let is_valid =
-        proof_system.verify(&prover_output.proof, input_for_verify, output_for_verify)?;
+        verifier.verify(&prover_output.proof, input_for_verify, output_for_verify)?;
 
     println!("\nResults:");
     println!("Model execution successful: ✓");
@@ -89,7 +90,7 @@ fn test_scenario(visibility: VarVisibility) -> Result<(), Box<dyn std::error::Er
             let mut modified_output = output.clone();
             modified_output[0][0] += 1.0; // Modify first output value
 
-            let is_valid_modified = proof_system.verify(
+            let is_valid_modified = verifier.verify(
                 &prover_output.proof,
                 input_for_verify,
                 Some(&modified_output),

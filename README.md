@@ -21,7 +21,9 @@ git clone https://github.com/chris-chris/mina-zkml.git
 cd mina-zkml
 
 # Build the project
-cargo build
+cargo build --release
+
+./target/release/mina-zkml-cli --help
 ```
 
 ## 📚 Usage
@@ -38,24 +40,12 @@ Execute the perceptron model prediction using the following command:
 cargo run --example perceptron
 ```
 
-### MNIST ZKML Model Prediction
+### MNIST Lenet ZKML Model End 2 End Example
 
-Execute the MNIST model prediction using the following command:
+Execute the MNIST model end-2-end example through notebook.
 
-```bash
-cargo run --example mnist_inference
-```
+`./examples/notebook/lenet.ipynb`
 
-### Creating a Verifier Script
+### Creating a Verifier Script & Deploy it to the MINA devnet
 
-Generate a verifier script for the MINA blockchain:
-
-```bash
-cargo run -- generate-verifier --model path/to/your/model.onnx
-```
-
-### Deploying a Verifier to MINA Blockchain
-
-```bash
-cargo run -- deploy-verifier --verifier path/to/verifier.script
-```
+https://github.com/chris-chris/mina-zkml-verifier

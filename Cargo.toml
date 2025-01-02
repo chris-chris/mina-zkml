@@ -23,32 +23,67 @@ path = "examples/mnist_inference.rs"
 name = "zk_inference"
 path = "examples/zk_inference.rs"
 
+[[example]]
+name = "zk_inference_public_input_private_output"
+path = "examples/zk_inference_public_input_private_output.rs"
+
+[[example]]
+name = "zk_inference_private_inputs_proof_only"
+path = "examples/zk_inference_private_inputs_proof_only.rs"
+
 [dependencies]
+# Core dependencies
 anyhow = "1.0.90"
-base64 = "0.21.7"
-bincode = "1.3"
-image = "0.24.7"
-instant = "0.1.13"
-log = "0.4.22"
-ndarray = "0.15.4"
-scale = "0.1.0"
+thiserror = "1.0.64"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0"
-thiserror = "1.0.64"
+serde_bytes = "0.11"
+log = "0.4.22"
+instant = { version = "0.1", features = ["wasm-bindgen", "inaccurate"] }
+once_cell = "1.19.0"
+
+# ML & Math dependencies
+ndarray = "0.15.4"
 tract-onnx = { git = "https://github.com/sonos/tract/", rev = "40c64319291184814d9fea5fdf4fa16f5a4f7116", default-features = false }
-kimchi = { git = "https://github.com/o1-labs/proof-systems", package = "kimchi" }
+
+# Cryptographic dependencies
+kimchi = { git = "https://github.com/o1-labs/proof-systems" }
+mina-curves = { git = "https://github.com/o1-labs/proof-systems" }
+mina-poseidon = { git = "https://github.com/o1-labs/proof-systems" }
+poly-commitment = { git = "https://github.com/o1-labs/proof-systems" }
+groupmap = { git = "https://github.com/o1-labs/proof-systems" }
 ark-ff = "0.4.0"
 ark-poly = "0.4.0"
 ark-ec = "0.4.0"
-mina-curves = { git = "https://github.com/o1-labs/proof-systems" }
-chrono = "0.4.38"
-rand = "0.8.5"
-groupmap = { git = "https://github.com/o1-labs/proof-systems" }
-poly-commitment = { git = "https://github.com/o1-labs/proof-systems" }
-mina-poseidon = { git = "https://github.com/o1-labs/proof-systems" }
+
+# CLI & Utility dependencies
 clap = { version = "4.5.1", features = ["derive"] }
-prettytable-rs = "0.10.0"
-md5 = "0.7.0"
+bincode = "1.3"
+base64 = "0.21.7"
+prettytable-rs = "0.10"
+image = "0.24.7"
+rand = { version = "0.8.5", features = ["getrandom"] }
+chrono = "0.4.38"
+
+# Optional WASM dependencies
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", features = ["console"], optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+console_error_panic_hook = { version = "0.1.7", optional = true }
+getrandom = { version = "0.2", features = ["js"], optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+rmp-serde = "1.3.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console"] }
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1.7"
+getrandom = { version = "0.2", features = ["js"] }
+serde-wasm-bindgen = "0.6"
+once_cell = "1.19.0"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
@@ -57,7 +92,21 @@ rstest = "0.18.2"
 assert_cmd = "2.0.4"
 predicates = "2.1.5"
 tempfile = "3.3.0"
+wasm-bindgen-test = "0.3"
 
 [features]
 default = []
 test-utils = []
+wasm = [
+    "dep:wasm-bindgen",
+    "dep:js-sys",
+    "dep:web-sys",
+    "dep:wasm-bindgen-futures",
+    "dep:console_error_panic_hook",
+    "dep:getrandom",
+    "dep:serde-wasm-bindgen"
+]
+
+[profile.release]
+opt-level = 3
+lto = true

@@ -1,9 +1,8 @@
 use anyhow::{anyhow, Context, Result};
-use base64::{engine::general_purpose::STANDARD as base64, Engine as _};
 use clap::{Parser, Subcommand};
 use mina_zkml::{
     graph::model::{Model, RunArgs, VarVisibility, Visibility},
-    zk::proof::{ProofSystem, ProverOutput},
+    zk::proof::{ProverOutput, ProverSystem},
 };
 use prettytable::{row, Table};
 use serde_json::{self, json, Value};
@@ -138,6 +137,7 @@ fn validate_input_json(input_data: &Value) -> Result<Vec<Vec<f32>>> {
     Ok(result)
 }
 
+#[allow(deprecated)]
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -248,9 +248,9 @@ fn main() -> Result<()> {
             )
             .with_context(|| format!("Failed to load model from {:?}", model))?;
 
-            // Create proof system and generate proof
-            let proof_system = ProofSystem::new(&model);
-            let prover_output = proof_system
+            // Create prover system and generate proof
+            let prover = ProverSystem::new(&model);
+            let prover_output = prover
                 .prove(&input_data)
                 .map_err(|e| anyhow!("Failed to generate proof: {}", e))?;
 
@@ -261,7 +261,7 @@ fn main() -> Result<()> {
             let proof_data = json!({
                 "metadata": {
                     "model": model.to_str().context("Invalid model path")?,
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "timestamp": "chrono::Utc::now().to_rfc3339()",
                     "visibility": {
                         "input": input_visibility,
                         "output": output_visibility,
@@ -269,7 +269,7 @@ fn main() -> Result<()> {
                 },
                 "input_shape": input_data.iter().map(|v| v.len()).collect::<Vec<_>>(),
                 "output": prover_output.output,
-                "proof": base64.encode(serialized_output),
+                "proof": base64::encode(serialized_output),
             });
 
             fs::write(output, serde_json::to_string_pretty(&proof_data)?)
@@ -308,8 +308,9 @@ fn main() -> Result<()> {
             )
             .with_context(|| format!("Failed to load model from {:?}", model))?;
 
-            // Create proof system
-            let proof_system = ProofSystem::new(&model);
+            // Create prover system to get verifier
+            let prover = ProverSystem::new(&model);
+            let verifier = prover.verifier();
 
             // Load and validate input data if needed
             let input_data = if visibility.input == Visibility::Public {
@@ -346,16 +347,15 @@ fn main() -> Result<()> {
             };
 
             // Deserialize and verify the proof
-            let proof_bytes = base64
-                .decode(
-                    proof_data["proof"]
-                        .as_str()
-                        .ok_or_else(|| anyhow!("Missing 'proof' field in proof file"))?,
-                )
-                .context("Failed to decode base64 proof data")?;
+            let proof_bytes = base64::decode(
+                proof_data["proof"]
+                    .as_str()
+                    .ok_or_else(|| anyhow!("Missing 'proof' field in proof file"))?,
+            )
+            .context("Failed to decode base64 proof data")?;
             let prover_output = deserialize_prover_output(&proof_bytes)?;
 
-            let is_valid = proof_system
+            let is_valid = verifier
                 .verify(
                     &prover_output.proof,
                     input_data.as_deref(),

@@ -79,7 +79,7 @@ pub fn node_output_shapes(
         let shape = output.fact.shape;
         let shape = shape
             .eval_to_usize(symbol_values)
-            .map_err(|_| GraphError::InvalidInputShape(111))?;
+            .map_err(|_| GraphError::InvalidInput("Utilities: node_output_shapes".to_string()))?;
         let mv = shape.to_vec();
         shapes.push(mv)
     }

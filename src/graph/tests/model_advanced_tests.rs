@@ -63,7 +63,7 @@ fn test_matrix_dimension_mismatch() {
     let input1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]; // 2x3 matrix
     let input2 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]; // 4x2 matrix
     let result = model.graph.execute(&[input1, input2]);
-    assert!(matches!(result, Err(GraphError::InvalidInputShape(_))));
+    assert!(matches!(result, Err(GraphError::InvalidInput(_))));
 }
 
 #[test]

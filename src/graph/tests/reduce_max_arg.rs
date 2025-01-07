@@ -41,8 +41,8 @@ fn test_reduce_argmax_basic() {
     // Execute the graph
     let result = model.graph.execute(&[input_tensor]).unwrap();
 
-    // Expected output: max value along axis 1
-    let expected_output = vec![25.0];
+    // Expected output: max indices along axis 1
+    let expected_output = vec![3.0]; // Index of 25.0
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0], expected_output);
@@ -88,8 +88,8 @@ fn test_reduce_argmax_axis() {
     // Execute the graph
     let result = model.graph.execute(&[input_tensor]).unwrap();
 
-    // Expected output: max values along axis 1
-    let expected_output = vec![25.0, 50.0];
+    // Expected output: max indices along axis 1
+    let expected_output = vec![3.0, 1.0]; // Indices of 25.0 and 50.0
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0], expected_output);
@@ -137,10 +137,10 @@ fn test_reduce_argmax_multi_dimension() {
     // Execute the graph
     let result = model.graph.execute(&[input_tensor]).unwrap();
 
-    // Expected output: max values along axis 2
+    // Expected output: max indices along axis 2
     let expected_output = vec![
-        20.0, 25.0, // Row 1
-        50.0, 35.0, // Row 2
+        1.0, 1.0, // Indices of 20.0 and 25.0 in each sub-array
+        1.0, 0.0, // Indices of 50.0 and 35.0 in each sub-array
     ];
 
     assert_eq!(result.len(), 1);

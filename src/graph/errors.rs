@@ -28,4 +28,6 @@ pub enum GraphError {
     InvalidNodeType,
     #[error("Node Not Found")]
     NodeNotFound,
+    #[error("Missing Attributes")]
+    MissingAttributes,
 }

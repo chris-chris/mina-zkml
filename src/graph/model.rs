@@ -10,7 +10,10 @@ use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
 };
+use tract_onnx::tract_core::ops::array::Gather;
 use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
+use tract_onnx::tract_core::ops::nn::Reduce;
+use tract_onnx::tract_core::ops::nn::Softmax;
 use tract_onnx::{prelude::*, tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
 use crate::zk::operations::identify_tract_operation;
@@ -35,6 +38,9 @@ pub enum OperationType {
     Reshape,
     Conv,
     MaxPool,
+    ArgMax,
+    Gather,
+    // Softmax
 }
 
 /// Serializable version of OutletId
@@ -282,6 +288,7 @@ impl ParsedNodes {
                         let mut input_values = Vec::new();
                         for &(input_node, slot) in &node.inputs {
                             if let Some(outputs) = node_outputs.get(&input_node) {
+                                println!("outputs: {:?}", outputs);
                                 if slot < outputs.len() {
                                     input_values.push(outputs[slot].clone());
                                 } else {
@@ -328,6 +335,108 @@ impl ParsedNodes {
     ) -> Result<Vec<Vec<f32>>, GraphError> {
         let result = match node.op_type {
             OperationType::Input => Ok(inputs.to_vec()),
+            OperationType::ArgMax => {
+                if inputs.is_empty() {
+                    return Err(GraphError::InvalidInputShape(20));
+                }
+                let input = &inputs[0]; // Input tensor
+                let axis = node
+                    .attributes
+                    .get("axes")
+                    .and_then(|v| v.first())
+                    .copied()
+                    .ok_or(GraphError::MissingAttributes)?;
+
+                println!("axis, {:?}", axis);
+
+                // ArgMax logic
+                let input_node = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+                let input_shape = if let NodeType::Node(n) = input_node {
+                    n.out_dims.clone()
+                } else {
+                    return Err(GraphError::InvalidNodeType);
+                };
+
+                println!("input_shape.len() {:?}", input_shape.len());
+
+                if axis >= input_shape.len() {
+                    return Err(GraphError::InvalidInputShape(21));
+                }
+
+                // Calculate stride for the specified axis
+                let stride = input_shape.iter().skip(axis).product::<usize>();
+
+                // Calculate reduced maximum values along the specified axis
+                let mut reduced_max_values = vec![];
+                for i in 0..input.len() / stride {
+                    let chunk = &input[i * stride..(i + 1) * stride];
+                    let max_value = chunk
+                        .iter()
+                        .cloned()
+                        .max_by(|a, b| a.partial_cmp(b).unwrap())
+                        .unwrap_or(f32::NEG_INFINITY); // Handle empty chunks gracefully
+                    reduced_max_values.push(max_value);
+                }
+
+                Ok(vec![reduced_max_values]) // Return reduced maximum values
+            }
+            OperationType::Gather => {
+                if inputs.len() < 2 {
+                    return Err(GraphError::InvalidInputShape(20));
+                }
+
+                let data = &inputs[0]; // Data tensor
+                let indices = &inputs[1]; // Indices tensor
+                let axis = node
+                    .attributes
+                    .get("axis")
+                    .and_then(|v| v.first())
+                    .copied()
+                    .ok_or(GraphError::MissingAttributes)?;
+
+                // Ensure axis is valid
+                let data_node = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+                let data_shape = if let NodeType::Node(n) = data_node {
+                    n.out_dims.clone()
+                } else {
+                    return Err(GraphError::InvalidNodeType);
+                };
+
+                if axis >= data_shape.len() {
+                    return Err(GraphError::InvalidInputShape(21));
+                }
+
+                // Validate indices
+                if indices
+                    .iter()
+                    .any(|&i| i < 0.0 || i >= data_shape[axis] as f32)
+                {
+                    return Err(GraphError::InvalidInputShape(22));
+                }
+
+                // Perform gather operation
+                let mut gathered_values = vec![];
+                for &idx in indices {
+                    let idx = idx as usize;
+                    let stride = data_shape.iter().skip(axis + 1).product::<usize>();
+                    let chunk_size = stride * data_shape[axis];
+
+                    // Select the data slice corresponding to the index
+                    for i in 0..data.len() / chunk_size {
+                        let start = i * chunk_size + idx * stride;
+                        let end = start + stride;
+                        gathered_values.extend_from_slice(&data[start..end]);
+                    }
+                }
+
+                Ok(vec![gathered_values]) // Return gathered values
+            }
             OperationType::Const => {
                 if let Some(op_params) = &node.op_params {
                     Ok(vec![op_params.clone()])
@@ -758,20 +867,18 @@ pub struct SerializableNode {
 impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
     fn from(node: &Node<TypedFact, Box<dyn TypedOp>>) -> Self {
         let op_name = node.op.name();
+
         let op_type = if op_name == "Const" {
             println!("Found Const operation");
             OperationType::Const
         } else if node.inputs.is_empty() {
             println!("Found Input operation");
             OperationType::Input
-        } else if op_name.starts_with("Rm(") {
-            println!("Found RmAxis operation");
-            OperationType::RmAxis
         } else if let Some(op_type) = identify_tract_operation(node) {
             op_type
         } else {
-            println!("Unknown operation: {}", op_name);
-            OperationType::RmAxis // Default to RmAxis for unknown operations
+            // TODO: Need an error handling
+            panic!("Unsupported operation: {}", op_name);
         };
 
         // Extract op_params Or attributes
@@ -787,7 +894,6 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
                     None
                 }
             }
-
             _ => None,
         };
 
@@ -797,6 +903,10 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
             handle_pool_spec(&mut attributes, &op.pool_spec, &Some(op.kernel_fmt));
         } else if let Some(op) = node.op.as_any().downcast_ref::<MaxPool>() {
             handle_pool_spec(&mut attributes, &op.pool_spec, &None);
+        } else if let Some(op) = node.op.as_any().downcast_ref::<Reduce>() {
+            attributes.insert("axes".to_string(), op.axes.to_vec());
+        } else if let Some(op) = node.op.as_any().downcast_ref::<Gather>() {
+            attributes.insert("axis".to_string(), vec![op.axis]);
         }
 
         SerializableNode {

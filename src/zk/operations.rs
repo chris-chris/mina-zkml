@@ -201,9 +201,17 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found Reshape operation");
             Some(OperationType::Reshape)
         }
-        name if name.starts_with("Rm(") => {
+        name if name.starts_with("RmAxis") => {
             println!("Found RmAxis operation");
             Some(OperationType::RmAxis)
+        }
+        name if name.starts_with("Gather") => {
+            println!("Found Gather operation");
+            Some(OperationType::Gather)
+        }
+        name if name.starts_with("Reduce<ArgMax") => {
+            println!("Found ArgMax operation");
+            Some(OperationType::ArgMax)
         }
         name if name == *"Source" => {
             println!("Found Input operation");

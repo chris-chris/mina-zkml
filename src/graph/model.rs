@@ -418,7 +418,7 @@ impl ParsedNodes {
             OperationType::Gather => {
                 if inputs.len() < 2 {
                     return Err(GraphError::InvalidInput(format!(
-                        "Gather: input len({})is invalid",
+                        "Gather: input len({}) is invalid",
                         inputs.len()
                     )));
                 }
@@ -430,7 +430,7 @@ impl ParsedNodes {
                     .get("axis")
                     .and_then(|v| v.first())
                     .copied()
-                    .ok_or(GraphError::MissingAttributes("Gather: ".to_string()))?;
+                    .ok_or(GraphError::MissingAttributes("Gather: axis".to_string()))?;
 
                 // Ensure axis is valid
                 let data_node = self
@@ -440,11 +440,16 @@ impl ParsedNodes {
                 let data_shape = if let NodeType::Node(n) = data_node {
                     n.out_dims.clone()
                 } else {
-                    return Err(GraphError::MissingAttributes("Gather: ".to_string()));
+                    return Err(GraphError::InvalidInput(
+                        "Gather: Node is not SerializableNode".to_string(),
+                    ));
                 };
 
                 if axis >= data_shape.len() {
-                    return Err(GraphError::MissingAttributes("Gather: ".to_string()));
+                    return Err(GraphError::InvalidInput(format!(
+                        "Gather: axis({}) is invalid",
+                        axis
+                    )));
                 }
 
                 // Validate indices
@@ -452,19 +457,20 @@ impl ParsedNodes {
                     .iter()
                     .any(|&i| i < 0.0 || i >= data_shape[axis] as f32)
                 {
-                    return Err(GraphError::MissingAttributes("Gather: ".to_string()));
+                    return Err(GraphError::InvalidInput(
+                        "Gather: indices do not match data shape".to_string(),
+                    ));
                 }
 
-                // Perform gather operation
+                // Perform Gather operation
                 let mut gathered_values = vec![];
-                for &idx in indices {
-                    let idx = idx as usize;
-                    let stride = data_shape.iter().skip(axis + 1).product::<usize>();
-                    let chunk_size = stride * data_shape[axis];
+                let outer_size = data_shape[..axis].iter().product::<usize>(); // Product of dimensions before axis
+                let stride = data_shape.iter().skip(axis + 1).product::<usize>(); // Product of dimensions after axis
 
-                    // Select the data slice corresponding to the index
-                    for i in 0..data.len() / chunk_size {
-                        let start = i * chunk_size + idx * stride;
+                for outer_offset in 0..outer_size {
+                    for &index in indices {
+                        let idx = index as usize;
+                        let start = outer_offset * data_shape[axis] * stride + idx * stride;
                         let end = start + stride;
                         gathered_values.extend_from_slice(&data[start..end]);
                     }
@@ -472,6 +478,7 @@ impl ParsedNodes {
 
                 Ok(vec![gathered_values]) // Return gathered values
             }
+
             OperationType::Const => {
                 if let Some(op_params) = &node.op_params {
                     Ok(vec![op_params.clone()])

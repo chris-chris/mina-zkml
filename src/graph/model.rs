@@ -1001,8 +1001,10 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
         } else if let Some(op_type) = identify_tract_operation(node) {
             op_type
         } else {
-            // TODO: Need an error handling
-            panic!("Unsupported operation: {}", op_name);
+            // TODO: Need an error handling. Default Operator should not be RmAxis
+            // panic!("Unsupported operation: {}", op_name);
+            println!("Unknown operation: {}", op_name);
+            OperationType::RmAxis // Default to RmAxis for unknown operations
         };
 
         // Extract op_params Or attributes

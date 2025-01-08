@@ -7,7 +7,7 @@ use tract_onnx::prelude::*;
 // use tract_onnx::tract_core::ops::nn::{Reduce, SoftmaxExp};
 // use tract_onnx::{prelude::*, tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
-pub fn vec_to_eval_input(dims: &Vec<usize>, data: &Vec<f32>) -> TractResult<TVec<TValue>> {
+pub fn vec_to_eval_input(dims: &[usize], data: &[f32]) -> TractResult<TVec<TValue>> {
     // TODO: Sanity check for dims
     // if dims.len() != 4 {
     // }

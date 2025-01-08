@@ -217,6 +217,10 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found Input operation");
             Some(OperationType::Input)
         }
+        name if name == *"Softmax" => {
+            println!("Found Input operation");
+            Some(OperationType::Softmax)
+        }
         name => {
             println!("Unknown operation: {}", name);
             None

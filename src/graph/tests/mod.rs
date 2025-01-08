@@ -7,4 +7,5 @@ mod model_advanced_tests;
 mod model_tests;
 mod reduce_argmax;
 mod scales_tests;
+mod softmax;
 mod utilities_tests;

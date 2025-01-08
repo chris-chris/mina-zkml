@@ -1,5 +1,6 @@
 use super::errors::GraphError;
 use super::model::*;
+use anyhow::Error;
 use std::collections::HashMap;
 use tract_onnx::prelude::{Node as OnnxNode, SymbolValues, TypedFact, TypedOp};
 use tract_onnx::tract_core::ops::cnn::{KernelFormat, PaddingSpec};
@@ -143,6 +144,36 @@ pub fn create_conv_node(
 }
 
 // Utility function to create a Conv node
+pub fn create_softmax_node(
+    id: usize,
+    inputs: Vec<(usize, usize)>,
+    out_dims: Vec<usize>,
+    attributes: HashMap<String, Vec<i32>>,
+) -> NodeType {
+    NodeType::Node(SerializableNode {
+        inputs,
+        out_dims,
+        out_scale: 1,
+        id,
+        op_type: OperationType::Softmax,
+        op_params: None,
+        attributes: attributes
+            .into_iter()
+            .map(|(key, value)| {
+                // Map each value to usize explicitly
+                (
+                    key,
+                    value
+                        .into_iter()
+                        .map(|v| v as usize)
+                        .collect::<Vec<usize>>(),
+                )
+            })
+            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
+    })
+}
+
+// Utility function to create a Conv node
 pub fn create_gather_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
@@ -230,4 +261,15 @@ pub fn create_max_pool_node(
             })
             .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
     })
+}
+
+pub fn get_value_from_attributes(
+    key: String,
+    attributes: &HashMap<String, Vec<usize>>,
+) -> Result<Vec<usize>, Error> {
+    let value: &Vec<usize> = attributes
+        .get(&key)
+        .ok_or(GraphError::MissingAttributes(key))?;
+
+    Ok(value.clone())
 }

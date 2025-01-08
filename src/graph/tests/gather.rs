@@ -1,5 +1,3 @@
-use tract_onnx::tract_hir::ops::math::exp;
-
 use crate::graph::errors::GraphError;
 use crate::graph::model::{Model, ParsedNodes, VarVisibility, Visibility};
 use crate::graph::utilities::*;

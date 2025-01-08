@@ -1,5 +1,8 @@
 use super::errors::GraphError;
 use super::utilities::handle_pool_spec;
+use crate::graph::tract_integration::*;
+use crate::graph::utilities::get_value_from_attributes;
+use crate::zk::operations::identify_tract_operation;
 use chrono::Local;
 use instant;
 use log::debug;
@@ -10,13 +13,14 @@ use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
 };
+use tract_data::internal::tract_smallvec::ToSmallVec;
+use tract_onnx::prelude::*;
 use tract_onnx::tract_core::ops::array::Gather;
 use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
-use tract_onnx::tract_core::ops::nn::Reduce;
 use tract_onnx::tract_core::ops::nn::Softmax;
-use tract_onnx::{prelude::*, tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
-
-use crate::zk::operations::identify_tract_operation;
+use tract_onnx::tract_core::ops::nn::{Reduce, SoftmaxExp};
+use tract_onnx::tract_core::ops::EvalOp;
+use tract_onnx::{tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
 /// Type alias for the graph loading result
 pub type GraphLoadResult = (Graph<TypedFact, Box<dyn TypedOp>>, SymbolValues);
@@ -40,7 +44,7 @@ pub enum OperationType {
     MaxPool,
     ArgMax,
     Gather,
-    // Softmax
+    Softmax,
 }
 
 /// Serializable version of OutletId
@@ -272,7 +276,11 @@ impl ParsedNodes {
                 match node_type {
                     NodeType::Node(node) => {
                         // Handle Const nodes
+                        println!("node.op_type:{:?}", node.op_type);
                         if matches!(node.op_type, OperationType::Const) {
+                            println!("node:{:?}", node);
+                            println!("node_idx:{:?}", node_idx);
+
                             if let Some(op_params) = &node.op_params {
                                 node_outputs.insert(node_idx, vec![op_params.clone()]);
                             }
@@ -288,7 +296,6 @@ impl ParsedNodes {
                         let mut input_values = Vec::new();
                         for &(input_node, slot) in &node.inputs {
                             if let Some(outputs) = node_outputs.get(&input_node) {
-                                println!("outputs: {:?}", outputs);
                                 if slot < outputs.len() {
                                     input_values.push(outputs[slot].clone());
                                 } else {
@@ -415,14 +422,53 @@ impl ParsedNodes {
                 // Return the reduced indices
                 Ok(vec![reduced_indices])
             }
+            OperationType::Softmax => {
+                if inputs.len() != 1 {
+                    return Err(GraphError::InvalidInput(format!(
+                        "Softmax: input len({}) is invalid",
+                        inputs.len()
+                    )));
+                }
+
+                // get eval_input
+                println!(
+                    "node.out_dims: {:?}, inputs[0]: {:?}",
+                    &node.out_dims,
+                    &inputs[0].len()
+                );
+                let eval_input = vec_to_eval_input(&node.out_dims, &inputs[0])?;
+                println!("dbg");
+
+                // get axes from attributes
+                let axes_vec: Vec<usize> =
+                    get_value_from_attributes("axes".to_string(), &node.attributes)?;
+                let mut axes: [usize; 4] = [0; 4];
+                for (i, &dim) in axes_vec.iter().enumerate() {
+                    axes[i] = dim;
+                }
+
+                // return res from softmax eval
+                let softmax = Softmax {
+                    axes: axes.to_smallvec(),
+                    quant_output_dt: None,
+                    exp: SoftmaxExp::Libc,
+                };
+                let eval: TValue = {
+                    let eval = softmax.eval(eval_input)?;
+                    eval[0].clone()
+                };
+                let res = tensor_to_vec::<f32>(&eval.into_tensor())?;
+                println!("result: {:?}", res);
+
+                Ok(vec![res])
+            }
             OperationType::Gather => {
-                if inputs.len() < 2 {
+                if inputs.len() != 2 {
                     return Err(GraphError::InvalidInput(format!(
                         "Gather: input len({}) is invalid",
                         inputs.len()
                     )));
                 }
-
                 let data = &inputs[0]; // Data tensor
                 let indices = &inputs[1]; // Indices tensor
                 let axis = node
@@ -478,7 +524,6 @@ impl ParsedNodes {
 
                 Ok(vec![gathered_values]) // Return gathered values
             }
-
             OperationType::Const => {
                 if let Some(op_params) = &node.op_params {
                     Ok(vec![op_params.clone()])
@@ -964,8 +1009,11 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
         let op_params = match op_name.as_ref() {
             "Const" => {
                 if let Some(const_op) = node.op.downcast_ref::<Const>() {
+                    //TODO: should handle ALL supported types
                     if let Ok(tensor_data) = const_op.0.as_slice::<f32>() {
                         Some(tensor_data.to_vec())
+                    } else if let Ok(tensor_data) = const_op.0.as_slice::<i32>() {
+                        Some(tensor_data.to_vec().iter().map(|&x| x as f32).collect())
                     } else {
                         None
                     }
@@ -983,9 +1031,13 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
         } else if let Some(op) = node.op.as_any().downcast_ref::<MaxPool>() {
             handle_pool_spec(&mut attributes, &op.pool_spec, &None);
         } else if let Some(op) = node.op.as_any().downcast_ref::<Reduce>() {
+            // TODO: Cover Arg(true), ArgMin(bool), Min, Prod, Sum and MeanOfSquares
             attributes.insert("axes".to_string(), op.axes.to_vec());
         } else if let Some(op) = node.op.as_any().downcast_ref::<Gather>() {
             attributes.insert("axis".to_string(), vec![op.axis]);
+        } else if let Some(op) = node.op.as_any().downcast_ref::<Softmax>() {
+            attributes.insert("axes".to_string(), op.axes.to_vec());
+            // TODO: Cover exe and quant_output_dt
         }
 
         SerializableNode {

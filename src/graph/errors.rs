@@ -30,4 +30,12 @@ pub enum GraphError {
     NodeNotFound,
     #[error("Missing attributes: {0}")]
     MissingAttributes(String),
+    #[error("Tract parsing failure: {0}")]
+    TractParseFailure(String),
+}
+
+impl From<anyhow::Error> for GraphError {
+    fn from(err: anyhow::Error) -> Self {
+        GraphError::TractParseFailure(err.to_string())
+    }
 }

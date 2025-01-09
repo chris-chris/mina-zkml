@@ -1,6 +1,6 @@
 use mina_zkml::graph::model::*;
 use mina_zkml::graph::utilities::*;
-use mina_zkml::zk::proof::ProofSystem;
+use mina_zkml::zk::proof::ProverSystem;
 use std::collections::{BTreeMap, HashMap};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Create proof system
     println!("Creating proof system...");
-    let proof_system = ProofSystem::new(&model);
+    let proof_system = ProverSystem::new(&model);
 
     // 3. Input Tensor
     let input_tensor = vec![
@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Output: {:?}", prover_output.output);
 
     // 5. Verify proof
-    let is_valid = proof_system.verify(&prover_output.proof, Some(&input_vec), Some(output))?;
+    let is_valid = proof_system.verifier().verify(&prover_output.proof, Some(&input_vec), Some(output))?;
     println!(
         "Verification result: {}",
         if is_valid { "✓ Valid" } else { "✗ Invalid" }

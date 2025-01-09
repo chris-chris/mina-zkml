@@ -1,5 +1,5 @@
 use mina_zkml::graph::model::{Model, RunArgs, VarVisibility, Visibility};
-use mina_zkml::zk::proof::ProofSystem;
+use mina_zkml::zk::proof::ProverSystem;
 use std::collections::HashMap;
 
 fn preprocess_image(img_path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Create proof system
     println!("Creating proof system...");
-    let proof_system = ProofSystem::new(&model);
+    let proof_system = ProverSystem::new(&model);
 
     println!("\n=== Test Case 1: Valid Proof for First Image ===");
     // Load first image
@@ -99,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_prediction_info(&output1[0]);
 
     // Verify proof for first image
-    let is_valid1 = proof_system.verify(&prover_output1.proof, Some(&input_vec1), Some(output1))?;
+    let is_valid1 = proof_system.verifier().verify(&prover_output1.proof, Some(&input_vec1), Some(output1))?;
     println!(
         "Verification result: {}",
         if is_valid1 {
@@ -124,7 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_prediction_info(&output2[0]);
 
     // Verify proof for second image
-    let is_valid2 = proof_system.verify(&prover_output2.proof, Some(&input_vec2), Some(output2))?;
+    let is_valid2 = proof_system.verifier().verify(&prover_output2.proof, Some(&input_vec2), Some(output2))?;
     println!(
         "Verification result: {}",
         if is_valid2 {
@@ -144,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_prediction_info(&fake_output1[0]);
 
     // Try to verify with wrong outputs
-    let is_valid3 = proof_system.verify(
+    let is_valid3 = proof_system.verifier().verify(
         &prover_output1.proof,
         Some(&input_vec1),
         Some(&fake_output1),
@@ -168,7 +168,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_prediction_info(&fake_output2[0]);
 
     // Try to verify with slightly modified outputs
-    let is_valid4 = proof_system.verify(
+    let is_valid4 = proof_system.verifier().verify(
         &prover_output2.proof,
         Some(&input_vec2),
         Some(&fake_output2),

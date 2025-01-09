@@ -1,3 +1,4 @@
+use anyhow::Error;
 use tract_data::internal::tract_smallvec::smallvec;
 use tract_onnx::prelude::*;
 // use tract_onnx::tract_core;
@@ -8,9 +9,12 @@ use tract_onnx::prelude::*;
 // use tract_onnx::{prelude::*, tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
 pub fn vec_to_eval_input(dims: &[usize], data: &[f32]) -> TractResult<TVec<TValue>> {
-    // TODO: Sanity check for dims
-    // if dims.len() != 4 {
-    // }
+    if dims.len() > 4 {
+        return Err(Error::msg(format!(
+            "Invalid dimensions: dims has more than 4 elements (dims.len() = {})",
+            dims.len()
+        )));
+    }
 
     let mut shape: [usize; 4] = [1; 4];
     for (i, &dim) in dims.iter().enumerate() {

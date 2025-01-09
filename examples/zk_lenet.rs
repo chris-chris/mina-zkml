@@ -99,7 +99,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_prediction_info(&output1[0]);
 
     // Verify proof for first image
-    let is_valid1 = proof_system.verifier().verify(&prover_output1.proof, Some(&input_vec1), Some(output1))?;
+    let is_valid1 =
+        proof_system
+            .verifier()
+            .verify(&prover_output1.proof, Some(&input_vec1), Some(output1))?;
     println!(
         "Verification result: {}",
         if is_valid1 {
@@ -124,7 +127,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_prediction_info(&output2[0]);
 
     // Verify proof for second image
-    let is_valid2 = proof_system.verifier().verify(&prover_output2.proof, Some(&input_vec2), Some(output2))?;
+    let is_valid2 =
+        proof_system
+            .verifier()
+            .verify(&prover_output2.proof, Some(&input_vec2), Some(output2))?;
     println!(
         "Verification result: {}",
         if is_valid2 {

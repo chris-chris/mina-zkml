@@ -96,7 +96,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Output: {:?}", prover_output.output);
 
     // 5. Verify proof
-    let is_valid = proof_system.verifier().verify(&prover_output.proof, Some(&input_vec), Some(output))?;
+    let is_valid =
+        proof_system
+            .verifier()
+            .verify(&prover_output.proof, Some(&input_vec), Some(output))?;
     println!(
         "Verification result: {}",
         if is_valid { "✓ Valid" } else { "✗ Invalid" }

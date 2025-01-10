@@ -17,8 +17,7 @@ use tract_data::internal::tract_smallvec::ToSmallVec;
 use tract_onnx::prelude::*;
 use tract_onnx::tract_core::ops::array::Gather;
 use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
-use tract_onnx::tract_core::ops::nn::Softmax;
-use tract_onnx::tract_core::ops::nn::{Reduce, SoftmaxExp};
+use tract_onnx::tract_core::ops::nn::{Reduce, Softmax, SoftmaxExp};
 use tract_onnx::tract_core::ops::EvalOp;
 use tract_onnx::{tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
@@ -42,9 +41,9 @@ pub enum OperationType {
     Reshape,
     Conv,
     MaxPool,
-    ArgMax,
     Gather,
     Softmax,
+    Reduce,
 }
 
 /// Serializable version of OutletId
@@ -342,85 +341,58 @@ impl ParsedNodes {
     ) -> Result<Vec<Vec<f32>>, GraphError> {
         let result = match node.op_type {
             OperationType::Input => Ok(inputs.to_vec()),
-            OperationType::ArgMax => {
-                if inputs.is_empty() {
-                    return Err(GraphError::InvalidInput(
-                        "ArgMax: Input is empty".to_string(),
-                    ));
+            OperationType::Reduce => {
+                if inputs.len() != 1 {
+                    return Err(GraphError::InvalidInput(format!(
+                        "Reduce: input len({}) is invalid",
+                        inputs.len()
+                    )));
                 }
-
-                // Retrieve the first input tensor
-                let input = &inputs[0];
-                let axes = node
-                    .attributes
-                    .get("axes")
-                    .ok_or(GraphError::MissingAttributes("axes".to_string()))?
-                    .clone();
-
-                println!("axes: {:?}", axes);
-
-                // Retrieve the shape of the input tensor from its node
+                // parse input_dims
                 let input_node = self
                     .nodes
                     .get(&node.inputs[0].0)
                     .ok_or(GraphError::NodeNotFound)?;
-                let input_shape = if let NodeType::Node(n) = input_node {
-                    n.out_dims.clone()
-                } else {
-                    return Err(GraphError::InvalidNodeType);
+                let input_dims: Vec<usize> = match input_node {
+                    NodeType::Node(input) => input.out_dims.clone(),
+                    _ => return Err(GraphError::InvalidNodeType),
                 };
 
-                println!("input_shape: {:?}", input_shape);
+                // get eval_input
+                let inputs_i64: Vec<i64> = inputs[0].iter().map(|&x| x as i64).collect();
+                let eval_input = vec_to_eval_input(&input_dims, &inputs_i64)?;
 
-                // Ensure all axes are valid
-                for &axis in &axes {
-                    if axis >= input_shape.len() {
-                        return Err(GraphError::InvalidInput(format!(
-                            "ArgMax: Axis({}) is invalid",
-                            axis
-                        )));
-                    }
+                // get axes from attributes
+                let axes_vec: Vec<usize> = get_value_from_attributes("axes", &node.attributes)?;
+                let mut axes: [usize; 4] = [usize::MAX; 4];
+                for (i, &dim) in axes_vec.iter().enumerate() {
+                    axes[i] = dim;
                 }
 
-                // Reduce across all specified axes
-                let mut reduced_shape = input_shape.clone();
-                for &axis in &axes {
-                    reduced_shape[axis] = 1; // Collapse the axis being reduced
-                }
+                // get reducer from attributes
+                let reducer = {
+                    let reducer_idx: usize =
+                        *get_value_from_attributes("reducer", &node.attributes)?
+                            .first()
+                            .unwrap_or(&0);
 
-                // Flatten the input to simplify iteration
-                let mut reduced_indices: Vec<f32> = vec![0.0; reduced_shape.iter().product()];
-                let input_flattened = input.clone();
+                    CustomReducer::get_reducer_from_index(reducer_idx)
+                        .ok_or_else(|| TractError::msg("Failed to parse reducer"))?
+                };
 
-                // Iterate over the axes to reduce
-                for &axis in axes.iter().rev() {
-                    let stride = input_shape.iter().skip(axis + 1).product::<usize>();
-                    let group_size = input_shape[axis];
+                // return res from eval
+                let reduce = Reduce {
+                    axes: axes.to_smallvec(),
+                    reducer,
+                };
+                let eval: TValue = {
+                    let eval = reduce.eval(eval_input)?;
+                    eval[0].clone()
+                };
+                let res_i64 = tensor_to_vec::<i64>(&eval.into_tensor())?;
+                let res: Vec<f32> = res_i64.iter().map(|&x| x as f32).collect();
 
-                    let mut next_reduced_indices = vec![];
-
-                    for i in 0..input_flattened.len() / (stride * group_size) {
-                        let start = i * stride * group_size;
-                        for j in 0..stride {
-                            let mut max_idx = 0;
-                            let mut max_value = f32::NEG_INFINITY;
-
-                            for k in 0..group_size {
-                                let idx = start + j + k * stride;
-                                if input_flattened[idx] > max_value {
-                                    max_value = input_flattened[idx];
-                                    max_idx = k;
-                                }
-                            }
-                            next_reduced_indices.push(max_idx as f32);
-                        }
-                    }
-
-                    reduced_indices = next_reduced_indices.clone();
-                }
-
-                // Return the reduced indices
-                Ok(vec![reduced_indices])
+                Ok(vec![res])
             }
             OperationType::Softmax => {
                 if inputs.len() != 1 {
@@ -431,17 +403,11 @@ impl ParsedNodes {
                 }
 
                 // get eval_input
-                println!(
-                    "node.out_dims: {:?}, inputs[0]: {:?}",
-                    &node.out_dims,
-                    &inputs[0].len()
-                );
+
                 let eval_input = vec_to_eval_input(&node.out_dims, &inputs[0])?;
-                println!("dbg");
 
                 // get axes from attributes
-                let axes_vec: Vec<usize> =
-                    get_value_from_attributes("axes".to_string(), &node.attributes)?;
+                let axes_vec: Vec<usize> = get_value_from_attributes("axes", &node.attributes)?;
                 let mut axes: [usize; 4] = [0; 4];
                 for (i, &dim) in axes_vec.iter().enumerate() {
                     axes[i] = dim;
@@ -458,7 +424,6 @@ impl ParsedNodes {
                     eval[0].clone()
                 };
                 let res = tensor_to_vec::<f32>(&eval.into_tensor())?;
-                println!("result: {:?}", res);
 
                 Ok(vec![res])
             }
@@ -1011,7 +976,7 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
         let op_params = match op_name.as_ref() {
             "Const" => {
                 if let Some(const_op) = node.op.downcast_ref::<Const>() {
-                    //TODO: should handle ALL supported types
+                    // TODO: should handle ALL supported types
                     if let Ok(tensor_data) = const_op.0.as_slice::<f32>() {
                         Some(tensor_data.to_vec())
                     } else if let Ok(tensor_data) = const_op.0.as_slice::<i32>() {
@@ -1033,8 +998,11 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
         } else if let Some(op) = node.op.as_any().downcast_ref::<MaxPool>() {
             handle_pool_spec(&mut attributes, &op.pool_spec, &None);
         } else if let Some(op) = node.op.as_any().downcast_ref::<Reduce>() {
-            // TODO: Cover Arg(true), ArgMin(bool), Min, Prod, Sum and MeanOfSquares
             attributes.insert("axes".to_string(), op.axes.to_vec());
+            attributes.insert(
+                "reducer".to_string(),
+                vec![CustomReducer::get_index_from_reducer(op.reducer)],
+            );
         } else if let Some(op) = node.op.as_any().downcast_ref::<Gather>() {
             attributes.insert("axis".to_string(), vec![op.axis]);
         } else if let Some(op) = node.op.as_any().downcast_ref::<Softmax>() {

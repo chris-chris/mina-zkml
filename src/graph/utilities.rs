@@ -204,7 +204,7 @@ pub fn create_gather_node(
 }
 
 // Utility function to create a Conv node
-pub fn create_argmax_node(
+pub fn create_reduce_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
     out_dims: Vec<usize>,
@@ -215,7 +215,7 @@ pub fn create_argmax_node(
         out_dims,
         out_scale: 1,
         id,
-        op_type: OperationType::ArgMax,
+        op_type: OperationType::Reduce,
         op_params: None,
         attributes: attributes
             .into_iter()
@@ -264,12 +264,12 @@ pub fn create_max_pool_node(
 }
 
 pub fn get_value_from_attributes(
-    key: String,
+    key: &str,
     attributes: &HashMap<String, Vec<usize>>,
 ) -> Result<Vec<usize>, Error> {
     let value: &Vec<usize> = attributes
-        .get(&key)
-        .ok_or(GraphError::MissingAttributes(key))?;
+        .get(&key.to_string())
+        .ok_or(GraphError::MissingAttributes(key.to_string()))?;
 
     Ok(value.clone())
 }

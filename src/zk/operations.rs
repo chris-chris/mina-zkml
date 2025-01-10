@@ -209,9 +209,9 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found Gather operation");
             Some(OperationType::Gather)
         }
-        name if name.starts_with("Reduce<ArgMax") => {
-            println!("Found ArgMax operation");
-            Some(OperationType::ArgMax)
+        name if name.starts_with("Reduce") => {
+            println!("Found Reduce operation");
+            Some(OperationType::Reduce)
         }
         name if name == *"Source" => {
             println!("Found Input operation");

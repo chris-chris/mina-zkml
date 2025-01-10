@@ -1,5 +1,8 @@
 use super::errors::GraphError;
 use super::utilities::handle_pool_spec;
+use crate::graph::tract_integration::*;
+use crate::graph::utilities::get_value_from_attributes;
+use crate::zk::operations::identify_tract_operation;
 use chrono::Local;
 use instant;
 use log::debug;
@@ -10,10 +13,14 @@ use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
 };
+use tract_data::internal::tract_smallvec::ToSmallVec;
+use tract_onnx::prelude::*;
+use tract_onnx::tract_core::ops::array::Gather;
 use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
-use tract_onnx::{prelude::*, tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
-
-use crate::zk::operations::identify_tract_operation;
+use tract_onnx::tract_core::ops::nn::Softmax;
+use tract_onnx::tract_core::ops::nn::{Reduce, SoftmaxExp};
+use tract_onnx::tract_core::ops::EvalOp;
+use tract_onnx::{tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
 /// Type alias for the graph loading result
 pub type GraphLoadResult = (Graph<TypedFact, Box<dyn TypedOp>>, SymbolValues);
@@ -35,6 +42,9 @@ pub enum OperationType {
     Reshape,
     Conv,
     MaxPool,
+    ArgMax,
+    Gather,
+    Softmax,
 }
 
 /// Serializable version of OutletId
@@ -266,7 +276,11 @@ impl ParsedNodes {
                 match node_type {
                     NodeType::Node(node) => {
                         // Handle Const nodes
+                        println!("node.op_type:{:?}", node.op_type);
                         if matches!(node.op_type, OperationType::Const) {
+                            println!("node:{:?}", node);
+                            println!("node_idx:{:?}", node_idx);
+
                             if let Some(op_params) = &node.op_params {
                                 node_outputs.insert(node_idx, vec![op_params.clone()]);
                             }
@@ -328,16 +342,203 @@ impl ParsedNodes {
     ) -> Result<Vec<Vec<f32>>, GraphError> {
         let result = match node.op_type {
             OperationType::Input => Ok(inputs.to_vec()),
+            OperationType::ArgMax => {
+                if inputs.is_empty() {
+                    return Err(GraphError::InvalidInput(
+                        "ArgMax: Input is empty".to_string(),
+                    ));
+                }
+
+                // Retrieve the first input tensor
+                let input = &inputs[0];
+                let axes = node
+                    .attributes
+                    .get("axes")
+                    .ok_or(GraphError::MissingAttributes("axes".to_string()))?
+                    .clone();
+
+                println!("axes: {:?}", axes);
+
+                // Retrieve the shape of the input tensor from its node
+                let input_node = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+                let input_shape = if let NodeType::Node(n) = input_node {
+                    n.out_dims.clone()
+                } else {
+                    return Err(GraphError::InvalidNodeType);
+                };
+
+                println!("input_shape: {:?}", input_shape);
+
+                // Ensure all axes are valid
+                for &axis in &axes {
+                    if axis >= input_shape.len() {
+                        return Err(GraphError::InvalidInput(format!(
+                            "ArgMax: Axis({}) is invalid",
+                            axis
+                        )));
+                    }
+                }
+
+                // Reduce across all specified axes
+                let mut reduced_shape = input_shape.clone();
+                for &axis in &axes {
+                    reduced_shape[axis] = 1; // Collapse the axis being reduced
+                }
+
+                // Flatten the input to simplify iteration
+                let mut reduced_indices: Vec<f32> = vec![0.0; reduced_shape.iter().product()];
+                let input_flattened = input.clone();
+
+                // Iterate over the axes to reduce
+                for &axis in axes.iter().rev() {
+                    let stride = input_shape.iter().skip(axis + 1).product::<usize>();
+                    let group_size = input_shape[axis];
+
+                    let mut next_reduced_indices = vec![];
+
+                    for i in 0..input_flattened.len() / (stride * group_size) {
+                        let start = i * stride * group_size;
+                        for j in 0..stride {
+                            let mut max_idx = 0;
+                            let mut max_value = f32::NEG_INFINITY;
+
+                            for k in 0..group_size {
+                                let idx = start + j + k * stride;
+                                if input_flattened[idx] > max_value {
+                                    max_value = input_flattened[idx];
+                                    max_idx = k;
+                                }
+                            }
+                            next_reduced_indices.push(max_idx as f32);
+                        }
+                    }
+
+                    reduced_indices = next_reduced_indices.clone();
+                }
+
+                // Return the reduced indices
+                Ok(vec![reduced_indices])
+            }
+            OperationType::Softmax => {
+                if inputs.len() != 1 {
+                    return Err(GraphError::InvalidInput(format!(
+                        "Softmax: input len({}) is invalid",
+                        inputs.len()
+                    )));
+                }
+
+                // get eval_input
+                println!(
+                    "node.out_dims: {:?}, inputs[0]: {:?}",
+                    &node.out_dims,
+                    &inputs[0].len()
+                );
+                let eval_input = vec_to_eval_input(&node.out_dims, &inputs[0])?;
+                println!("dbg");
+
+                // get axes from attributes
+                let axes_vec: Vec<usize> =
+                    get_value_from_attributes("axes".to_string(), &node.attributes)?;
+                let mut axes: [usize; 4] = [0; 4];
+                for (i, &dim) in axes_vec.iter().enumerate() {
+                    axes[i] = dim;
+                }
+
+                // return res from softmax eval
+                let softmax = Softmax {
+                    axes: axes.to_smallvec(),
+                    quant_output_dt: None,
+                    exp: SoftmaxExp::Libc,
+                };
+                let eval: TValue = {
+                    let eval = softmax.eval(eval_input)?;
+                    eval[0].clone()
+                };
+                let res = tensor_to_vec::<f32>(&eval.into_tensor())?;
+                println!("result: {:?}", res);
+
+                Ok(vec![res])
+            }
+            OperationType::Gather => {
+                if inputs.len() != 2 {
+                    return Err(GraphError::InvalidInput(format!(
+                        "Gather: input len({}) is invalid",
+                        inputs.len()
+                    )));
+                }
+                let data = &inputs[0]; // Data tensor
+                let indices = &inputs[1]; // Indices tensor
+                let axis = node
+                    .attributes
+                    .get("axis")
+                    .and_then(|v| v.first())
+                    .copied()
+                    .ok_or(GraphError::MissingAttributes("Gather: axis".to_string()))?;
+
+                // Ensure axis is valid
+                let data_node = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+                let data_shape = if let NodeType::Node(n) = data_node {
+                    n.out_dims.clone()
+                } else {
+                    return Err(GraphError::InvalidInput(
+                        "Gather: Node is not SerializableNode".to_string(),
+                    ));
+                };
+
+                if axis >= data_shape.len() {
+                    return Err(GraphError::InvalidInput(format!(
+                        "Gather: axis({}) is invalid",
+                        axis
+                    )));
+                }
+
+                // Validate indices
+                if indices
+                    .iter()
+                    .any(|&i| i < 0.0 || i >= data_shape[axis] as f32)
+                {
+                    return Err(GraphError::InvalidInput(
+                        "Gather: indices do not match data shape".to_string(),
+                    ));
+                }
+
+                // Perform Gather operation
+                let mut gathered_values = vec![];
+                let outer_size = data_shape[..axis].iter().product::<usize>(); // Product of dimensions before axis
+                let stride = data_shape.iter().skip(axis + 1).product::<usize>(); // Product of dimensions after axis
+
+                for outer_offset in 0..outer_size {
+                    for &index in indices {
+                        let idx = index as usize;
+                        let start = outer_offset * data_shape[axis] * stride + idx * stride;
+                        let end = start + stride;
+                        gathered_values.extend_from_slice(&data[start..end]);
+                    }
+                }
+
+                Ok(vec![gathered_values]) // Return gathered values
+            }
             OperationType::Const => {
                 if let Some(op_params) = &node.op_params {
                     Ok(vec![op_params.clone()])
                 } else {
-                    Err(GraphError::InvalidInputShape(0))
+                    Err(GraphError::InvalidInput(
+                        "Const: op_parms does not exist".to_string(),
+                    ))
                 }
             }
             OperationType::Conv => {
                 if inputs.len() != 3 {
-                    return Err(GraphError::InvalidInputShape(1));
+                    return Err(GraphError::InvalidInput(format!(
+                        "Conv: Input len({})",
+                        inputs.len()
+                    )));
                 }
 
                 // Parse dimensions from inputs[0] and weight
@@ -353,7 +554,7 @@ impl ParsedNodes {
                         op_params: Some(weights),
                         ..
                     })) => weights.clone(),
-                    _ => return Err(GraphError::InvalidInputShape(2)),
+                    _ => return Err(GraphError::InvalidInput("Conv: Weight parsing".to_string())),
                 };
                 let bias = match self.nodes.get(&node.inputs[2].0) {
                     Some(NodeType::Node(SerializableNode {
@@ -361,7 +562,7 @@ impl ParsedNodes {
                         op_params: Some(bias),
                         ..
                     })) => bias.clone(),
-                    _ => return Err(GraphError::InvalidInputShape(3)),
+                    _ => return Err(GraphError::InvalidInput("Conv: Bias parsing".to_string())),
                 };
 
                 if let NodeType::Node(input) = input_node {
@@ -375,7 +576,9 @@ impl ParsedNodes {
                     let kernel_shape = node
                         .attributes
                         .get("kernel_shape")
-                        .ok_or(GraphError::InvalidInputShape(4))?
+                        .ok_or(GraphError::MissingAttributes(
+                            "Conv: kernel_shape".to_string(),
+                        ))?
                         .iter()
                         .map(|&x| x as i32)
                         .collect::<Vec<i32>>();
@@ -478,7 +681,9 @@ impl ParsedNodes {
 
             OperationType::MatMul | OperationType::EinSum => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape(5));
+                    return Err(GraphError::InvalidInput(
+                        "MatMul | EinSum: Empty input".to_string(),
+                    ));
                 }
 
                 let input = &inputs[0]; // Shape: [784]
@@ -487,7 +692,9 @@ impl ParsedNodes {
                 } else if let Some(op_params) = &node.op_params {
                     op_params
                 } else {
-                    return Err(GraphError::InvalidInputShape(6));
+                    return Err(GraphError::InvalidInput(
+                        "MatMul | EinSum: op_parms parsing".to_string(),
+                    ));
                 };
 
                 let input_dim = input.len(); // 784
@@ -497,7 +704,11 @@ impl ParsedNodes {
 
                 // Verify dimensions match
                 if op_params.len() != weight_rows * weight_cols {
-                    return Err(GraphError::InvalidInputShape(7));
+                    return Err(GraphError::InvalidInput(format!(
+                        "MatMul | EinSum: op_params.len(): {}, weight_rows * weight_cols: {}",
+                        op_params.len(),
+                        weight_rows * weight_cols
+                    )));
                 }
 
                 let mut output = vec![0.0; output_dim];
@@ -517,17 +728,23 @@ impl ParsedNodes {
                 let b = if inputs.len() > 1 {
                     &inputs[1]
                 } else {
-                    return Err(GraphError::InvalidInputShape(8));
+                    return Err(GraphError::InvalidInput(
+                        "Add: second val is not found".to_string(),
+                    ));
                 };
 
                 if a.len() != b.len() {
-                    return Err(GraphError::InvalidInputShape(9));
+                    return Err(GraphError::InvalidInput(
+                        "Add: dimension of a nd b are not same".to_string(),
+                    ));
                 }
                 Ok(vec![a.iter().zip(b.iter()).map(|(&x, &y)| x + y).collect()])
             }
             OperationType::Relu | OperationType::Max => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape(10));
+                    return Err(GraphError::InvalidInput(
+                        "Relu | Max: Empty input".to_string(),
+                    ));
                 }
 
                 let result = inputs[0].iter().map(|&x| x.max(0.0)).collect();
@@ -535,12 +752,17 @@ impl ParsedNodes {
             }
             OperationType::Sigmoid => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape(11));
+                    return Err(GraphError::InvalidInput(
+                        "Sigmoid: Input is empty".to_string(),
+                    ));
                 }
 
                 let expected_size: usize = node.out_dims.iter().product();
                 if inputs[0].len() != expected_size {
-                    return Err(GraphError::InvalidInputShape(12));
+                    return Err(GraphError::InvalidInput(format!(
+                        "Sigmoid: Input length({})",
+                        inputs[0].len()
+                    )));
                 }
 
                 Ok(vec![inputs[0]
@@ -558,27 +780,36 @@ impl ParsedNodes {
             }
             OperationType::RmAxis => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape(13));
+                    return Err(GraphError::InvalidInput(
+                        "RmAxis: Input is empty".to_string(),
+                    ));
                 }
 
                 let expected_size: usize = node.out_dims.iter().product();
                 let input = &inputs[0];
 
                 if input.len() != expected_size {
-                    return Err(GraphError::InvalidInputShape(14));
+                    return Err(GraphError::InvalidInput(format!(
+                        "RmAxis: Input size({})",
+                        input.len()
+                    )));
                 }
 
                 Ok(vec![input.clone()])
             }
             OperationType::Reshape => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape(15));
+                    return Err(GraphError::InvalidInput(
+                        "Reshape: Input is empty".to_string(),
+                    ));
                 }
                 Ok(vec![inputs[0].clone()])
             }
             OperationType::MaxPool => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInputShape(16));
+                    return Err(GraphError::InvalidInput(
+                        "MaxPool: Input is empty".to_string(),
+                    ));
                 }
 
                 let input_node = self
@@ -598,7 +829,9 @@ impl ParsedNodes {
                     let kernel_shape = node
                         .attributes
                         .get("kernel_shape")
-                        .ok_or(GraphError::InvalidInputShape(17))?
+                        .ok_or(GraphError::MissingAttributes(
+                            "MaxPool: kernel_shape".to_string(),
+                        ))?
                         .iter()
                         .map(|&x| x as i32)
                         .collect::<Vec<i32>>();
@@ -758,18 +991,18 @@ pub struct SerializableNode {
 impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
     fn from(node: &Node<TypedFact, Box<dyn TypedOp>>) -> Self {
         let op_name = node.op.name();
+
         let op_type = if op_name == "Const" {
             println!("Found Const operation");
             OperationType::Const
         } else if node.inputs.is_empty() {
             println!("Found Input operation");
             OperationType::Input
-        } else if op_name.starts_with("Rm(") {
-            println!("Found RmAxis operation");
-            OperationType::RmAxis
         } else if let Some(op_type) = identify_tract_operation(node) {
             op_type
         } else {
+            // TODO: Need an error handling. Default Operator should not be RmAxis
+            // panic!("Unsupported operation: {}", op_name);
             println!("Unknown operation: {}", op_name);
             OperationType::RmAxis // Default to RmAxis for unknown operations
         };
@@ -778,8 +1011,11 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
         let op_params = match op_name.as_ref() {
             "Const" => {
                 if let Some(const_op) = node.op.downcast_ref::<Const>() {
+                    //TODO: should handle ALL supported types
                     if let Ok(tensor_data) = const_op.0.as_slice::<f32>() {
                         Some(tensor_data.to_vec())
+                    } else if let Ok(tensor_data) = const_op.0.as_slice::<i32>() {
+                        Some(tensor_data.to_vec().iter().map(|&x| x as f32).collect())
                     } else {
                         None
                     }
@@ -787,7 +1023,6 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
                     None
                 }
             }
-
             _ => None,
         };
 
@@ -797,6 +1032,14 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
             handle_pool_spec(&mut attributes, &op.pool_spec, &Some(op.kernel_fmt));
         } else if let Some(op) = node.op.as_any().downcast_ref::<MaxPool>() {
             handle_pool_spec(&mut attributes, &op.pool_spec, &None);
+        } else if let Some(op) = node.op.as_any().downcast_ref::<Reduce>() {
+            // TODO: Cover Arg(true), ArgMin(bool), Min, Prod, Sum and MeanOfSquares
+            attributes.insert("axes".to_string(), op.axes.to_vec());
+        } else if let Some(op) = node.op.as_any().downcast_ref::<Gather>() {
+            attributes.insert("axis".to_string(), vec![op.axis]);
+        } else if let Some(op) = node.op.as_any().downcast_ref::<Softmax>() {
+            attributes.insert("axes".to_string(), op.axes.to_vec());
+            // TODO: Cover exe and quant_output_dt
         }
 
         SerializableNode {

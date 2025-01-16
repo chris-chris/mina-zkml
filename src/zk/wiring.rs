@@ -152,15 +152,27 @@ impl ModelCircuitBuilder {
                         let output_size = node.out_dims.iter().product::<usize>();
                         circuit_size += output_size;
                     }
-                    OperationType::Reduce => {
-                        let output_size = node.out_dims.iter().product::<usize>();
-                        circuit_size += output_size;
-                    }
                     OperationType::Gather => {
                         let output_size = node.out_dims.iter().product::<usize>();
                         circuit_size += output_size;
                     }
                     OperationType::Softmax => {
+                        let output_size = node.out_dims.iter().product::<usize>();
+                        circuit_size += output_size;
+                    }
+                    OperationType::Reduce => {
+                        let output_size = node.out_dims.iter().product::<usize>();
+                        circuit_size += output_size;
+                    }
+                    OperationType::AddAxis => {
+                        let output_size = node.out_dims.iter().product::<usize>();
+                        circuit_size += output_size;
+                    }
+                    OperationType::Cast => {
+                        let output_size = node.out_dims.iter().product::<usize>();
+                        circuit_size += output_size;
+                    }
+                    OperationType::TypedBin => {
                         let output_size = node.out_dims.iter().product::<usize>();
                         circuit_size += output_size;
                     }
@@ -262,21 +274,6 @@ impl ModelCircuitBuilder {
                         intermediate_rows.insert(*idx, self.current_row);
                         self.current_row += output_size;
                     }
-                    OperationType::Reduce => {
-                        let output_size: usize = node.out_dims.iter().product();
-
-                        // Add computation gates
-                        for i in 0..output_size {
-                            gates.push(CircuitGate {
-                                typ: GateType::Generic,
-                                wires: Self::create_wires(self.current_row + i),
-                                coeffs: vec![Fp::from(1u64)],
-                            });
-                        }
-
-                        intermediate_rows.insert(*idx, self.current_row);
-                        self.current_row += output_size;
-                    }
                     OperationType::Gather => {
                         let output_size: usize = node.out_dims.iter().product();
 
@@ -293,6 +290,66 @@ impl ModelCircuitBuilder {
                         self.current_row += output_size;
                     }
                     OperationType::Softmax => {
+                        let output_size: usize = node.out_dims.iter().product();
+
+                        // Add computation gates
+                        for i in 0..output_size {
+                            gates.push(CircuitGate {
+                                typ: GateType::Generic,
+                                wires: Self::create_wires(self.current_row + i),
+                                coeffs: vec![Fp::from(1u64)],
+                            });
+                        }
+
+                        intermediate_rows.insert(*idx, self.current_row);
+                        self.current_row += output_size;
+                    }
+                    OperationType::Reduce => {
+                        let output_size: usize = node.out_dims.iter().product();
+
+                        // Add computation gates
+                        for i in 0..output_size {
+                            gates.push(CircuitGate {
+                                typ: GateType::Generic,
+                                wires: Self::create_wires(self.current_row + i),
+                                coeffs: vec![Fp::from(1u64)],
+                            });
+                        }
+
+                        intermediate_rows.insert(*idx, self.current_row);
+                        self.current_row += output_size;
+                    }
+                    OperationType::AddAxis => {
+                        let output_size: usize = node.out_dims.iter().product();
+
+                        // Add computation gates
+                        for i in 0..output_size {
+                            gates.push(CircuitGate {
+                                typ: GateType::Generic,
+                                wires: Self::create_wires(self.current_row + i),
+                                coeffs: vec![Fp::from(1u64)],
+                            });
+                        }
+
+                        intermediate_rows.insert(*idx, self.current_row);
+                        self.current_row += output_size;
+                    }
+                    OperationType::Cast => {
+                        let output_size: usize = node.out_dims.iter().product();
+
+                        // Add computation gates
+                        for i in 0..output_size {
+                            gates.push(CircuitGate {
+                                typ: GateType::Generic,
+                                wires: Self::create_wires(self.current_row + i),
+                                coeffs: vec![Fp::from(1u64)],
+                            });
+                        }
+
+                        intermediate_rows.insert(*idx, self.current_row);
+                        self.current_row += output_size;
+                    }
+                    OperationType::TypedBin => {
                         let output_size: usize = node.out_dims.iter().product();
 
                         // Add computation gates

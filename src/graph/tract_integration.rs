@@ -1,15 +1,11 @@
 use anyhow::Error;
-use tract_data::internal::tract_smallvec::smallvec;
-use tract_onnx::{prelude::*, tract_core::ops::binary::TypedBinOp};
-// use tract_onnx::tract_core;
-// use tract_onnx::tract_core::ops::array::Gather;
-// use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
-// use tract_onnx::tract_core::ops::nn::Softmax;
-// use tract_onnx::tract_core::ops::nn::{Reduce, SoftmaxExp};
-// use tract_onnx::{prelude::*, tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 use std::fmt::Debug;
+use tract_data::internal::tract_smallvec::smallvec;
 use tract_onnx::prelude::Datum;
+use tract_onnx::prelude::*;
+use tract_onnx::tract_core::ops::binary::BinMiniOp;
 pub use tract_onnx::tract_core::ops::nn::Reducer;
+use tract_onnx::tract_hir::ops::math::{Add, Div, Max, Min, Mul, Pow, Sub};
 
 pub fn vec_to_eval_input<T: Debug + Datum + Copy>(
     dims: &[usize],
@@ -149,8 +145,8 @@ impl CustomDatumType {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum CustomTypedBinOp {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CustomBinOp {
     Add,
     Sub,
     Mul,
@@ -158,47 +154,38 @@ pub enum CustomTypedBinOp {
     Pow,
 }
 
-// impl CustomTypedBinOp {
-//     /// Map between `CustomTypedBinOp`, `TypedBinOp`, and their corresponding indices.
-//     const BIN_OP_MAP: &'static [(Self, TypedBinOp, usize)] = &[
-//         (Self::Add, TypedBinOp::Add, 0),
-//         (Self::Sub, TypedBinOp::Sub, 1),
-//         (Self::Mul, TypedBinOp::Mul, 2),
-//         (Self::Div, TypedBinOp::Div, 3),
-//         (Self::Pow, TypedBinOp::Pow, 4),
-//     ];
+impl CustomBinOp {
+    /// Map between names, indices, and `CustomBinOp` variants.
+    const BIN_OP_MAP: &'static [(&'static str, &dyn BinMiniOp, usize)] = &[
+        ("Add", &Add, 0),
+        ("Sub", &Sub, 1),
+        ("Mul", &Mul, 2),
+        ("Div", &Div, 3),
+        ("Pow", &Pow, 4),
+        ("Max", &Max, 5),
+        ("Min", &Min, 6),
+    ];
 
-//     /// Get the index of a given `TypedBinOp`.
-//     pub fn get_index_from_typed_bin_op(bin_op: TypedBinOp) -> usize {
-//         Self::BIN_OP_MAP
-//             .iter()
-//             .find(|(_, original, _)| original == &bin_op)
-//             .map(|(_, _, index)| *index)
-//             .expect("Invalid TypedBinOp variant")
-//     }
+    /// Get the index from a `BinMiniOp` by matching its name.
+    pub fn get_index_from_op(op: &dyn BinMiniOp) -> Option<usize> {
+        let op_name = op.name();
+        Self::BIN_OP_MAP
+            .iter()
+            .find(|(name, _, _)| *name == op_name)
+            .map(|(_, _, index)| *index)
+    }
 
-//     /// Get the `TypedBinOp` corresponding to a given index.
-//     pub fn get_typed_bin_op_from_index(index: usize) -> Option<TypedBinOp> {
-//         Self::BIN_OP_MAP
-//             .iter()
-//             .find(|(_, _, idx)| *idx == index)
-//             .map(|(_, bin_op, _)| *bin_op)
-//     }
-
-//     /// Convert `CustomTypedBinOp` to `TypedBinOp`.
-//     pub fn to_original(&self) -> TypedBinOp {
-//         Self::BIN_OP_MAP
-//             .iter()
-//             .find(|(custom, _, _)| custom == self)
-//             .map(|(_, bin_op, _)| *bin_op)
-//             .expect("Invalid CustomTypedBinOp variant")
-//     }
-
-//     /// Convert `TypedBinOp` to `CustomTypedBinOp`.
-//     pub fn from_original(bin_op: TypedBinOp) -> Option<Self> {
-//         Self::BIN_OP_MAP
-//             .iter()
-//             .find(|(_, original, _)| *original == bin_op)
-//             .map(|(custom, _, _)| *custom)
-//     }
-// }
+    /// Get the `CustomBinOp` from an index.
+    pub fn get_op_from_index(index: &usize) -> Option<Box<dyn BinMiniOp>> {
+        match index {
+            0 => Some(Box::new(Add)),
+            1 => Some(Box::new(Sub)),
+            2 => Some(Box::new(Mul)),
+            3 => Some(Box::new(Div)),
+            4 => Some(Box::new(Pow)),
+            5 => Some(Box::new(Max)),
+            6 => Some(Box::new(Min)),
+            _ => None,
+        }
+    }
+}

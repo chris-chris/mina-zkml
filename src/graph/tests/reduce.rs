@@ -1,5 +1,4 @@
 use crate::graph::model::{Model, ParsedNodes, VarVisibility, Visibility};
-use crate::graph::tract_integration::{CustomReducer, Reducer};
 use crate::graph::utilities::*;
 use std::collections::{BTreeMap, HashMap};
 

@@ -149,7 +149,6 @@ pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
         OperationType::Sigmoid => Some(OnnxOperation::Sigmoid),
         OperationType::Add => Some(OnnxOperation::Add),
         OperationType::EinSum => Some(OnnxOperation::EinSum),
-        OperationType::Max => Some(OnnxOperation::Max),
         OperationType::RmAxis => Some(OnnxOperation::RmAxis),
         OperationType::Reshape => Some(OnnxOperation::Reshape),
         _ => None,
@@ -185,24 +184,24 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found matrix operation: {}", name);
             Some(OperationType::EinSum)
         }
-        name if name == *"Relu" || name == *"Max" => {
-            println!("Found ReLU/Max operation: {}", name);
-            if name == *"Max" {
-                Some(OperationType::Max)
-            } else {
-                Some(OperationType::Relu)
-            }
+        name if name == *"Relu" => {
+            println!("Found ReLU operation: {}", name);
+            Some(OperationType::Relu)
         }
         name if name == *"Sigmoid" => {
             println!("Found Sigmoid operation");
             Some(OperationType::Sigmoid)
         }
-        name if name == *"Add" => {
-            println!("Found Add operation: {}", name);
-            Some(OperationType::Add)
-        }
-        name if name == *"Sub" => {
-            println!("Found Sub operation: {}", name);
+        // TypedBinOp
+        name if name == *"Add"
+            || name == *"Sub"
+            || name == *"Mul"
+            || name == *"Div"
+            || name == *"Pow"
+            || name == *"Max"
+            || name == *"Min" =>
+        {
+            println!("Found TypedBin operation: {}", name);
             Some(OperationType::TypedBin)
         }
         name if name == *"AddAxis" => {

@@ -23,7 +23,6 @@ use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
 use tract_onnx::tract_core::ops::nn::{Reduce, Softmax, SoftmaxExp};
 use tract_onnx::tract_core::ops::EvalOp;
 use tract_onnx::tract_hir::internal::AxisOp;
-use tract_onnx::tract_hir::ops::math::Sub;
 use tract_onnx::{tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
 /// Type alias for the graph loading result
@@ -40,7 +39,6 @@ pub enum OperationType {
     Sigmoid,
     Add,
     EinSum,
-    Max,
     Const,
     RmAxis,
     Reshape,
@@ -196,7 +194,6 @@ impl ParsedNodes {
 
                         // Statistics
                         let min = op_params.iter().fold(f32::INFINITY, |a, &b| a.min(b));
-                        let max = op_params.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
                         let sum: f32 = op_params.iter().sum();
                         let mean = sum / op_params.len() as f32;
 
@@ -223,8 +220,6 @@ impl ParsedNodes {
                         )
                         .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "  Min: {:.6}", min)
-                            .map_err(|_| GraphError::UnableToSaveModel)?;
-                        writeln!(file, "  Max: {:.6}", max)
                             .map_err(|_| GraphError::UnableToSaveModel)?;
                         writeln!(file, "  Mean: {:.6}", mean)
                             .map_err(|_| GraphError::UnableToSaveModel)?;
@@ -383,7 +378,7 @@ impl ParsedNodes {
                 //         .unwrap_or(&0);
 
                 //     CustomDatumType::get_datum_type_from_index(datum_type_idx)
-                //         .ok_or_else(|| TractError::msg("Failed to parse datum type"))?
+                //         .ok_or_else(|| TractError::msg("Cast: failed to parse datum type"))?
                 // };
 
                 // return res from eval
@@ -425,9 +420,16 @@ impl ParsedNodes {
                     smallvec![a_eval[0].clone(), b_eval[0].clone()];
                 println!("typed_bin_inputs:{:?}", typed_bin_inputs);
 
-                let sub = TypedBinOp(Box::new(Sub), None);
+                // get TypedBinOp and evaluate it
+                let typed_bin_op = {
+                    let idx = get_value_from_attributes("bin_op", &node.attributes)?;
+                    let op = CustomBinOp::get_op_from_index(&idx[0]).ok_or_else(|| {
+                        TractError::msg("TypedBinOp: failed to parse CustomBinOp index")
+                    })?;
+                    TypedBinOp(op, None)
+                };
                 let eval: TValue = {
-                    let eval = sub.eval(typed_bin_inputs)?;
+                    let eval = typed_bin_op.eval(typed_bin_inputs)?;
                     println!("eval:{:?}", eval);
                     eval[0].clone()
                 };
@@ -473,7 +475,7 @@ impl ParsedNodes {
                             .unwrap_or(&0);
 
                     CustomReducer::get_reducer_from_index(reducer_idx)
-                        .ok_or_else(|| TractError::msg("Failed to parse reducer"))?
+                        .ok_or_else(|| TractError::msg("Reduce: failed to parse reducer index"))?
                 };
 
                 // return res from eval
@@ -822,11 +824,9 @@ impl ParsedNodes {
                 }
                 Ok(vec![a.iter().zip(b.iter()).map(|(&x, &y)| x + y).collect()])
             }
-            OperationType::Relu | OperationType::Max => {
+            OperationType::Relu => {
                 if inputs.is_empty() {
-                    return Err(GraphError::InvalidInput(
-                        "Relu | Max: Empty input".to_string(),
-                    ));
+                    return Err(GraphError::InvalidInput("Relu: Empty input".to_string()));
                 }
 
                 let result = inputs[0].iter().map(|&x| x.max(0.0)).collect();
@@ -1074,7 +1074,8 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
     fn from(node: &Node<TypedFact, Box<dyn TypedOp>>) -> Self {
         let op_name = node.op.name();
 
-        println!("node.op111:{:?}", node.op);
+        println!("node.op:{:?}", node.op);
+        println!("node.op.name:{:?}", node.op.name());
 
         let op_type: OperationType = if op_name == "Const" {
             println!("Found Const operation");
@@ -1131,7 +1132,7 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
         } else if let Some(op) = node.op.as_any().downcast_ref::<AxisOp>() {
             match op {
                 AxisOp::Add(i) => attributes.insert("axis".to_string(), vec![*i]),
-                // TODO: Should consider Rm, Move, Reshape
+                // TODO: Consider Rm, Move, Reshape
                 _ => attributes.insert("axis".to_string(), vec![0]),
             };
         } else if let Some(op) = node.op.as_any().downcast_ref::<Cast>() {
@@ -1140,10 +1141,15 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
                 vec![CustomDatumType::get_index_from_datum_type(op.to)],
             );
         } else if let Some(op) = node.op.as_any().downcast_ref::<TypedBinOp>() {
-            // attributes.insert(
-            //     "bin_op".to_string(),
-            //     vec![CustomTypedBinOp::get_index_from_datum_type(op.to)],
-            // );
+            // TODO: Consider all math ops
+            let idx = match CustomBinOp::get_index_from_op(&*op.0) {
+                Some(idx) => idx,
+                None => {
+                    println!("Should be parsed between 0 to 6");
+                    0
+                }
+            };
+            attributes.insert("bin_op".to_string(), vec![idx]);
         }
 
         SerializableNode {

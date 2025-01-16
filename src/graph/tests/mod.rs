@@ -9,5 +9,5 @@ mod model_tests;
 mod reduce;
 mod scales_tests;
 mod softmax;
-mod typed_bin;
+mod typed_bin_op;
 mod utilities_tests;

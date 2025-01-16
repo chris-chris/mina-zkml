@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use tract_data::internal::tract_smallvec::smallvec;
 use tract_onnx::prelude::*;
 
-pub fn vec_to_eval_input<T: Debug + Datum + Copy>(
+pub fn vec_to_tract_vec<T: Debug + Datum + Copy>(
     dims: &[usize],
     data: &[T],
 ) -> TractResult<TVec<TValue>> {

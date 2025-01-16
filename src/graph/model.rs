@@ -281,11 +281,7 @@ impl ParsedNodes {
                 match node_type {
                     NodeType::Node(node) => {
                         // Handle Const nodes
-                        println!("node.op_type:{:?}", node.op_type);
                         if matches!(node.op_type, OperationType::Const) {
-                            println!("node:{:?}", node);
-                            println!("node_idx:{:?}", node_idx);
-
                             if let Some(op_params) = &node.op_params {
                                 node_outputs.insert(node_idx, vec![op_params.clone()]);
                             }
@@ -354,7 +350,7 @@ impl ParsedNodes {
                         inputs.len()
                     )));
                 }
-                let res: Vec<f32> = inputs[0].iter().map(|&x| x as f32).collect();
+                let res: Vec<f32> = inputs[0].to_vec();
 
                 Ok(vec![res])
 
@@ -395,7 +391,8 @@ impl ParsedNodes {
                         inputs.len()
                     )));
                 }
-                // parse a
+
+                // parse first input, a
                 let a = self
                     .nodes
                     .get(&node.inputs[0].0)
@@ -405,9 +402,9 @@ impl ParsedNodes {
                     _ => return Err(GraphError::InvalidNodeType),
                 };
                 let a_f64: Vec<f64> = inputs[0].iter().map(|&x| x as f64).collect();
-                let a_eval = vec_to_eval_input(&a_dims, &a_f64)?;
+                let a_tract = vec_to_tract_vec(&a_dims, &a_f64)?;
 
-                // parse b
+                // parse second input, b
                 let b: &NodeType = self
                     .nodes
                     .get(&node.inputs[1].0)
@@ -417,11 +414,9 @@ impl ParsedNodes {
                     _ => return Err(GraphError::InvalidNodeType),
                 };
                 let b_f64: Vec<f64> = inputs[1].iter().map(|&x| x as f64).collect();
-                let b_eval = vec_to_eval_input(&b_dims, &b_f64)?;
+                let b_tract = vec_to_tract_vec(&b_dims, &b_f64)?;
 
-                let typed_bin_inputs: TVec<TValue> =
-                    smallvec![a_eval[0].clone(), b_eval[0].clone()];
-                println!("typed_bin_inputs:{:?}", typed_bin_inputs);
+                let bin_op_inputs: TVec<TValue> = smallvec![a_tract[0].clone(), b_tract[0].clone()];
 
                 // get TypedBinOp and evaluate it
                 let typed_bin_op = {
@@ -432,8 +427,7 @@ impl ParsedNodes {
                     TypedBinOp(op, None)
                 };
                 let eval: TValue = {
-                    let eval = typed_bin_op.eval(typed_bin_inputs)?;
-                    println!("eval:{:?}", eval);
+                    let eval = typed_bin_op.eval(bin_op_inputs)?;
                     eval[0].clone()
                 };
 
@@ -450,7 +444,7 @@ impl ParsedNodes {
                     )));
                 }
 
-                // parse a
+                // parse first input, a
                 let a = self
                     .nodes
                     .get(&node.inputs[0].0)
@@ -460,7 +454,7 @@ impl ParsedNodes {
                     _ => return Err(GraphError::InvalidNodeType),
                 };
                 let a_f64: Vec<f64> = inputs[0].iter().map(|&x| x as f64).collect();
-                let trac_input = vec_to_eval_input(&a_dims, &a_f64)?;
+                let a_tract = vec_to_tract_vec(&a_dims, &a_f64)?;
 
                 // get ElementWiseOp and evaluate it
                 let element_wise_op = {
@@ -472,8 +466,7 @@ impl ParsedNodes {
                     ElementWiseOp(op, None)
                 };
                 let eval: TValue = {
-                    let eval = element_wise_op.eval(trac_input)?;
-                    println!("eval:{:?}", eval);
+                    let eval = element_wise_op.eval(a_tract)?;
                     eval[0].clone()
                 };
 
@@ -489,6 +482,7 @@ impl ParsedNodes {
                         inputs.len()
                     )));
                 }
+
                 // parse input_dims
                 let input_node = self
                     .nodes
@@ -499,9 +493,9 @@ impl ParsedNodes {
                     _ => return Err(GraphError::InvalidNodeType),
                 };
 
-                // get eval_input
+                // convert input into tract vec
                 let inputs_i64: Vec<i64> = inputs[0].iter().map(|&x| x as i64).collect();
-                let eval_input = vec_to_eval_input(&input_dims, &inputs_i64)?;
+                let tract_input = vec_to_tract_vec(&input_dims, &inputs_i64)?;
 
                 // get axes from attributes
                 let axes_vec: Vec<usize> = get_value_from_attributes("axes", &node.attributes)?;
@@ -527,7 +521,7 @@ impl ParsedNodes {
                     reducer,
                 };
                 let eval: TValue = {
-                    let eval = reduce.eval(eval_input)?;
+                    let eval = reduce.eval(tract_input)?;
                     eval[0].clone()
                 };
                 let res_i64 = tensor_to_vec::<i64>(&eval.into_tensor())?;
@@ -543,9 +537,8 @@ impl ParsedNodes {
                     )));
                 }
 
-                // get eval_input
-
-                let eval_input = vec_to_eval_input(&node.out_dims, &inputs[0])?;
+                // convert input into tract vec
+                let tract_input = vec_to_tract_vec(&node.out_dims, &inputs[0])?;
 
                 // get axes from attributes
                 let axes_vec: Vec<usize> = get_value_from_attributes("axes", &node.attributes)?;
@@ -561,7 +554,7 @@ impl ParsedNodes {
                     exp: SoftmaxExp::Libc,
                 };
                 let eval: TValue = {
-                    let eval = softmax.eval(eval_input)?;
+                    let eval = softmax.eval(tract_input)?;
                     eval[0].clone()
                 };
                 let res = tensor_to_vec::<f32>(&eval.into_tensor())?;
@@ -948,9 +941,7 @@ impl ParsedNodes {
                     let input_channels = input_dims[1] as i32; // C
                     let input_height = input_dims[2] as i32; // H
                     let input_width = input_dims[3] as i32; // W
-                    println!("node id: {:?}", node.id);
-                    println!("node attributes: {:?}", node.attributes);
-                    // Parse MaxPool parameters
+                                                            // Parse MaxPool parameters
                     let kernel_shape = node
                         .attributes
                         .get("kernel_shape")
@@ -1116,10 +1107,6 @@ pub struct SerializableNode {
 impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
     fn from(node: &Node<TypedFact, Box<dyn TypedOp>>) -> Self {
         let op_name = node.op.name();
-
-        println!("node.op:{:?}", node.op);
-        println!("node.op.name:{:?}", node.op.name());
-
         let op_type: OperationType = if op_name == "Const" {
             println!("Found Const operation");
             OperationType::Const
@@ -1156,7 +1143,6 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
 
         // Extract convolution attributes
         let mut attributes = HashMap::new();
-        println!("op: {:?}", node.op);
         if let Some(op) = node.op.as_any().downcast_ref::<Conv>() {
             handle_pool_spec(&mut attributes, &op.pool_spec, &Some(op.kernel_fmt));
         } else if let Some(op) = node.op.as_any().downcast_ref::<MaxPool>() {
@@ -1194,7 +1180,6 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
             };
             attributes.insert("bin_op_idx".to_string(), vec![idx]);
         } else if let Some(op) = node.op.as_any().downcast_ref::<ElementWiseOp>() {
-            println!("Hello");
             // TODO: Consider all ElementWise ops
             let idx = match CustomElementWiseOp::get_index_from_op(&*op.0) {
                 Some(idx) => idx,
@@ -1464,16 +1449,16 @@ impl Model {
                     let mut input_mappings = vec![];
                     for mapping in &scan_op.input_mapping {
                         match mapping {
-                            tract_onnx::tract_hir::ops::scan::InputMapping::Scan(info) => {
+                            tract_onnx::tract_core::ops::scan::InputMapping::Scan(info) => {
                                 input_mappings.push(InputMapping::Stacked {
                                     axis: info.axis,
                                     chunk: info.chunk as usize,
                                 });
                             }
-                            tract_onnx::tract_hir::ops::scan::InputMapping::State => {
+                            tract_onnx::tract_core::ops::scan::InputMapping::State => {
                                 input_mappings.push(InputMapping::State);
                             }
-                            tract_onnx::tract_hir::ops::scan::InputMapping::Full => {
+                            tract_onnx::tract_core::ops::scan::InputMapping::Full => {
                                 input_mappings.push(InputMapping::Full);
                             }
                         }

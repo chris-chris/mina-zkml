@@ -1,9 +1,11 @@
 use tract_onnx::prelude::*;
+use tract_onnx::tract_core::internal::ElementWiseMiniOp;
 use tract_onnx::tract_core::ops::binary::BinMiniOp;
+use tract_onnx::tract_core::ops::math::Rem;
+use tract_onnx::tract_core::ops::math::*;
 use tract_onnx::tract_core::ops::nn::Reducer;
-use tract_onnx::tract_hir::internal::ElementWiseMiniOp;
-use tract_onnx::tract_hir::ops::math::Rem;
-use tract_onnx::tract_hir::ops::math::*;
+
+type ElementWiseOpEntry = (&'static str, fn() -> Box<dyn ElementWiseMiniOp>, usize);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CustomReducer {
@@ -186,11 +188,7 @@ pub enum CustomElementWiseOp {
 
 impl CustomElementWiseOp {
     /// Map between names, actual Tract operations, and indices for `CustomElementWiseOp`.
-    pub const ELEMENTWISE_OP_MAP: &'static [(
-        &'static str,
-        fn() -> Box<dyn ElementWiseMiniOp>,
-        usize,
-    )] = &[
+    pub const ELEMENTWISE_OP_MAP: &'static [ElementWiseOpEntry] = &[
         ("Abs", || Box::new(Abs {}), 0),
         ("Exp", || Box::new(Exp {}), 1),
         ("Ln", || Box::new(Ln {}), 2),

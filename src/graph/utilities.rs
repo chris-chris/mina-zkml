@@ -3,8 +3,8 @@ use super::model::*;
 use anyhow::Error;
 use std::collections::HashMap;
 use tract_onnx::prelude::{Node as OnnxNode, SymbolValues, TypedFact, TypedOp};
+use tract_onnx::tract_core::ops::cnn::PoolSpec;
 use tract_onnx::tract_core::ops::cnn::{KernelFormat, PaddingSpec};
-use tract_onnx::tract_hir::ops::cnn::PoolSpec;
 
 // TODO: refactor duplicate functions
 pub fn handle_pool_spec(
@@ -12,8 +12,6 @@ pub fn handle_pool_spec(
     pool_spec: &PoolSpec,
     kernel_fmt: &Option<KernelFormat>,
 ) {
-    println!("pool_spec: {:?} ", pool_spec);
-
     // Kernel shape
     attributes.insert(
         "kernel_shape".to_string(),

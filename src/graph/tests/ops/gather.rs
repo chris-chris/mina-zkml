@@ -233,12 +233,6 @@ fn test_gather_4d() {
         37.0, 38.0, 39.0, 40.0, 45.0, 46.0, 47.0, 48.0,
     ];
 
-    println!(
-        "len result: {:?}, len expected: {:?}, ",
-        result[0].len(),
-        expected_output.len()
-    );
-
     assert_eq!(result.len(), 1);
     assert_eq!(result[0], expected_output);
 }

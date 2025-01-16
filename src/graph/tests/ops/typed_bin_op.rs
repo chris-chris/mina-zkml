@@ -12,7 +12,7 @@ fn test_typedbinop_add_basic() {
     // Input node B (id: 1)
     nodes.insert(1, create_input_node(1, vec![1, 4])); // Shape: [1, 4]
 
-    // TypedBin node (id: 2)
+    // TypedBinOp node (id: 2)
     let mut attributes = HashMap::new();
     attributes.insert("bin_op_idx".to_string(), vec![0]); // Add operation
 
@@ -63,7 +63,7 @@ fn test_typedbinop_add_multi_dimension() {
     // Input node B (id: 1)
     nodes.insert(1, create_input_node(1, vec![2, 2, 3])); // Shape: [2, 2, 3]
 
-    // TypedBin node (id: 2)
+    // TypedBinOp node (id: 2)
     let mut attributes = HashMap::new();
     attributes.insert("bin_op_idx".to_string(), vec![0]); // Add operation
 
@@ -123,7 +123,7 @@ fn test_typedbinop_sub_basic() {
     // Input node B (id: 1)
     nodes.insert(1, create_input_node(1, vec![1, 4])); // Shape: [1, 4]
 
-    // TypedBin node (id: 2)
+    // TypedBinOp node (id: 2)
     let mut attributes = HashMap::new();
     attributes.insert("bin_op_idx".to_string(), vec![1]);
 
@@ -174,7 +174,7 @@ fn test_typedbinop_sub_multi_dimension() {
     // Input node B (id: 1)
     nodes.insert(1, create_input_node(1, vec![2, 3])); // Shape: [2, 3]
 
-    // TypedBin node (id: 2)
+    // TypedBinOp node (id: 2)
     let mut attributes = HashMap::new();
     attributes.insert("bin_op_idx".to_string(), vec![1]); // Operation along axis 1
 
@@ -234,7 +234,7 @@ fn test_typedbinop_pow_basic() {
     // Input node B (id: 1)
     nodes.insert(1, create_input_node(1, vec![1, 4])); // Shape: [1, 4]
 
-    // TypedBin node (id: 2)
+    // TypedBinOp node (id: 2)
     let mut attributes = HashMap::new();
     attributes.insert("bin_op_idx".to_string(), vec![4]); // Pow operation
 
@@ -285,7 +285,7 @@ fn test_typedbinop_pow_multi_dimension() {
     // Input node B (id: 1)
     nodes.insert(1, create_input_node(1, vec![2, 2, 2])); // Shape: [2, 2, 2]
 
-    // TypedBin node (id: 2)
+    // TypedBinOp node (id: 2)
     let mut attributes = HashMap::new();
     attributes.insert("bin_op_idx".to_string(), vec![4]); // Pow operation
 

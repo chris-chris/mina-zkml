@@ -200,8 +200,8 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             .iter()
             .any(|(bin_name, _, _)| *bin_name == name) =>
         {
-            println!("Found TypedBin operation: {}", name);
-            Some(OperationType::TypedBin)
+            println!("Found TypedBinOp operation: {}", name);
+            Some(OperationType::TypedBinOp)
         }
         // ElementWiseOp
         name if CustomElementWiseOp::ELEMENTWISE_OP_MAP

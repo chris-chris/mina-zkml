@@ -51,7 +51,7 @@ pub enum OperationType {
     Reduce,
     AddAxis,
     Cast,
-    TypedBin,
+    TypedBinOp,
     ElementWiseOp,
 }
 
@@ -384,10 +384,10 @@ impl ParsedNodes {
                 // let casting = tensor_input.cast_to_dt(datum_type)?;
                 // let res: Vec<f32> = insputs.iter().map(|&x| x as f32).collect();
             }
-            OperationType::TypedBin => {
+            OperationType::TypedBinOp => {
                 if inputs.len() != 2 {
                     return Err(GraphError::InvalidInput(format!(
-                        "TypedBin: input len({}) is invalid",
+                        "TypedBinOp: input len({}) is invalid",
                         inputs.len()
                     )));
                 }
@@ -1170,7 +1170,7 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
                 vec![CustomDatumType::get_index_from_datum_type(op.to)],
             );
         } else if let Some(op) = node.op.as_any().downcast_ref::<TypedBinOp>() {
-            // TODO: Consider all TypedBin ops
+            // TODO: Consider all TypedBinOp ops
             let idx = match CustomBinOp::get_index_from_op(&*op.0) {
                 Some(idx) => idx,
                 None => {

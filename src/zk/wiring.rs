@@ -172,7 +172,7 @@ impl ModelCircuitBuilder {
                         let output_size = node.out_dims.iter().product::<usize>();
                         circuit_size += output_size;
                     }
-                    OperationType::TypedBin => {
+                    OperationType::TypedBinOp => {
                         let output_size = node.out_dims.iter().product::<usize>();
                         circuit_size += output_size;
                     }
@@ -353,7 +353,7 @@ impl ModelCircuitBuilder {
                         intermediate_rows.insert(*idx, self.current_row);
                         self.current_row += output_size;
                     }
-                    OperationType::TypedBin => {
+                    OperationType::TypedBinOp => {
                         let output_size: usize = node.out_dims.iter().product();
 
                         // Add computation gates

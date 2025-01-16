@@ -274,7 +274,7 @@ pub fn create_typedbin_node(
         out_dims,
         out_scale: 1,
         id,
-        op_type: OperationType::TypedBin,
+        op_type: OperationType::TypedBinOp,
         op_params: None,
         attributes: attributes
             .into_iter()

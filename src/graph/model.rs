@@ -19,6 +19,7 @@ use tract_onnx::tract_core::ops::array::Gather;
 use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
 use tract_onnx::tract_core::ops::nn::{Reduce, Softmax, SoftmaxExp};
 use tract_onnx::tract_core::ops::EvalOp;
+use tract_onnx::tract_hir::internal::AxisOp;
 use tract_onnx::{tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
 /// Type alias for the graph loading result
@@ -44,6 +45,7 @@ pub enum OperationType {
     Gather,
     Softmax,
     Reduce,
+    AddAxis,
 }
 
 /// Serializable version of OutletId
@@ -488,6 +490,27 @@ impl ParsedNodes {
                 }
 
                 Ok(vec![gathered_values]) // Return gathered values
+            }
+            OperationType::AddAxis => {
+                if inputs.len() != 1 {
+                    return Err(GraphError::InvalidInput(format!(
+                        "AddAxis: input len({}) is invalid",
+                        inputs.len()
+                    )));
+                }
+
+                // get tensor_data
+                let mut tensor = vec_to_tensor(&node.out_dims, &inputs[0])?;
+
+                // get axes from attributes
+                let axis_vec: Vec<usize> = get_value_from_attributes("axis", &node.attributes)?;
+
+                // change tensor with AxisOp
+                let add_axis = AxisOp::Add(axis_vec[0]);
+                add_axis.change_tensor(&mut tensor, false)?;
+                let res = tensor_to_vec::<f32>(&tensor)?;
+
+                Ok(vec![res])
             }
             OperationType::Const => {
                 if let Some(op_params) = &node.op_params {
@@ -993,6 +1016,7 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
 
         // Extract convolution attributes
         let mut attributes = HashMap::new();
+        println!("op: {:?}", node.op);
         if let Some(op) = node.op.as_any().downcast_ref::<Conv>() {
             handle_pool_spec(&mut attributes, &op.pool_spec, &Some(op.kernel_fmt));
         } else if let Some(op) = node.op.as_any().downcast_ref::<MaxPool>() {
@@ -1008,6 +1032,12 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
         } else if let Some(op) = node.op.as_any().downcast_ref::<Softmax>() {
             attributes.insert("axes".to_string(), op.axes.to_vec());
             // TODO: Cover exe and quant_output_dt
+        } else if let Some(op) = node.op.as_any().downcast_ref::<AxisOp>() {
+            match op {
+                AxisOp::Add(i) => attributes.insert("axis".to_string(), vec![*i]),
+                // TODO: Should consider Rm, Move, Reshape
+                _ => attributes.insert("axis".to_string(), vec![0]),
+            };
         }
 
         SerializableNode {

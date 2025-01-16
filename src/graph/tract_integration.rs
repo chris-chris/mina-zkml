@@ -33,6 +33,24 @@ pub fn vec_to_eval_input<T: Debug + Datum + Copy>(
     Ok(tvec)
 }
 
+pub fn vec_to_tensor<T: Debug + Datum + Copy>(dims: &[usize], data: &[T]) -> TractResult<Tensor> {
+    if dims.len() > 4 {
+        return Err(Error::msg(format!(
+            "Invalid dimensions: dims has more than 4 elements (dims.len() = {})",
+            dims.len()
+        )));
+    }
+
+    let mut shape: [usize; 4] = [1; 4];
+    for (i, &dim) in dims.iter().enumerate() {
+        shape[i] = dim;
+    }
+
+    let tensor_data = Tensor::from_shape(&shape, data)?;
+
+    Ok(tensor_data)
+}
+
 pub fn tensor_to_vec<T: Datum>(tensor: &Tensor) -> TractResult<Vec<T>> {
     Ok(tensor.as_slice::<T>()?.to_vec())
 }

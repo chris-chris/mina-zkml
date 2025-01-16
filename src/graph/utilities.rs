@@ -87,7 +87,7 @@ pub fn node_output_shapes(
     Ok(shapes)
 }
 
-// Utility function to create an input node
+// Utility function to create an Input node
 pub fn create_input_node(id: usize, shape: Vec<usize>) -> NodeType {
     NodeType::Node(SerializableNode {
         inputs: vec![],
@@ -100,7 +100,7 @@ pub fn create_input_node(id: usize, shape: Vec<usize>) -> NodeType {
     })
 }
 
-// Utility function to create a constant node (weight or bias)
+// Utility function to create a Const node (weight or bias)
 pub fn create_const_node(id: usize, shape: Vec<usize>, values: Vec<f32>) -> NodeType {
     NodeType::Node(SerializableNode {
         inputs: vec![],
@@ -143,7 +143,37 @@ pub fn create_conv_node(
     })
 }
 
-// Utility function to create a Conv node
+// Utility function to create a AddAxis node
+pub fn create_add_axis_node(
+    id: usize,
+    inputs: Vec<(usize, usize)>,
+    out_dims: Vec<usize>,
+    attributes: HashMap<String, Vec<i32>>,
+) -> NodeType {
+    NodeType::Node(SerializableNode {
+        inputs,
+        out_dims,
+        out_scale: 1,
+        id,
+        op_type: OperationType::AddAxis,
+        op_params: None,
+        attributes: attributes
+            .into_iter()
+            .map(|(key, value)| {
+                // Map each value to usize explicitly
+                (
+                    key,
+                    value
+                        .into_iter()
+                        .map(|v| v as usize)
+                        .collect::<Vec<usize>>(),
+                )
+            })
+            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
+    })
+}
+
+// Utility function to create a Softmax node
 pub fn create_softmax_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
@@ -173,7 +203,7 @@ pub fn create_softmax_node(
     })
 }
 
-// Utility function to create a Conv node
+// Utility function to create a Gather node
 pub fn create_gather_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
@@ -203,7 +233,7 @@ pub fn create_gather_node(
     })
 }
 
-// Utility function to create a Conv node
+// Utility function to create a Reduce node
 pub fn create_reduce_node(
     id: usize,
     inputs: Vec<(usize, usize)>,

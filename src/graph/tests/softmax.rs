@@ -1,8 +1,6 @@
 use crate::graph::model::{Model, ParsedNodes, VarVisibility, Visibility};
 use crate::graph::utilities::*;
 use std::collections::{BTreeMap, HashMap};
-// use ndarray::{Array4, Axis};
-// use crate::graph::errors::GraphError;
 
 #[test]
 fn test_softmax_basic() {

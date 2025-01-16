@@ -16,14 +16,16 @@ use std::{
 use tract_data::internal::tract_smallvec::smallvec;
 use tract_data::internal::tract_smallvec::ToSmallVec;
 use tract_onnx::prelude::*;
+use tract_onnx::tract_core::internal::AxisOp;
+use tract_onnx::tract_core::internal::ElementWiseMiniOp;
 use tract_onnx::tract_core::ops::array::Gather;
 use tract_onnx::tract_core::ops::binary::TypedBinOp;
 use tract_onnx::tract_core::ops::cast::Cast;
 use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
+use tract_onnx::tract_core::ops::element_wise::ElementWiseOp;
 use tract_onnx::tract_core::ops::nn::{Reduce, Softmax, SoftmaxExp};
-use tract_onnx::tract_core::ops::EvalOp;
-use tract_onnx::tract_hir::internal::AxisOp;
-use tract_onnx::{tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
+use tract_onnx::tract_core::ops::{konst::Const, scan::Scan, EvalOp};
+use types::{CustomBinOp, CustomDatumType, CustomElementWiseOp, CustomReducer};
 
 /// Type alias for the graph loading result
 pub type GraphLoadResult = (Graph<TypedFact, Box<dyn TypedOp>>, SymbolValues);
@@ -50,6 +52,7 @@ pub enum OperationType {
     AddAxis,
     Cast,
     TypedBin,
+    ElementWiseOp,
 }
 
 /// Serializable version of OutletId
@@ -422,7 +425,7 @@ impl ParsedNodes {
 
                 // get TypedBinOp and evaluate it
                 let typed_bin_op = {
-                    let idx = get_value_from_attributes("bin_op", &node.attributes)?;
+                    let idx = get_value_from_attributes("bin_op_idx", &node.attributes)?;
                     let op = CustomBinOp::get_op_from_index(&idx[0]).ok_or_else(|| {
                         TractError::msg("TypedBinOp: failed to parse CustomBinOp index")
                     })?;
@@ -430,6 +433,46 @@ impl ParsedNodes {
                 };
                 let eval: TValue = {
                     let eval = typed_bin_op.eval(typed_bin_inputs)?;
+                    println!("eval:{:?}", eval);
+                    eval[0].clone()
+                };
+
+                let res_f64 = tensor_to_vec::<f64>(&eval.into_tensor())?;
+                let res: Vec<f32> = res_f64.iter().map(|&x| x as f32).collect();
+
+                Ok(vec![res])
+            }
+            OperationType::ElementWiseOp => {
+                if inputs.len() != 1 {
+                    return Err(GraphError::InvalidInput(format!(
+                        "ElementWiseOp: input len({}) is invalid",
+                        inputs.len()
+                    )));
+                }
+
+                // parse a
+                let a = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+                let a_dims: Vec<usize> = match a {
+                    NodeType::Node(input) => input.out_dims.clone(),
+                    _ => return Err(GraphError::InvalidNodeType),
+                };
+                let a_f64: Vec<f64> = inputs[0].iter().map(|&x| x as f64).collect();
+                let trac_input = vec_to_eval_input(&a_dims, &a_f64)?;
+
+                // get ElementWiseOp and evaluate it
+                let element_wise_op = {
+                    let idx = get_value_from_attributes("element_wise_op_idx", &node.attributes)?;
+                    let op: Box<dyn ElementWiseMiniOp> =
+                        CustomElementWiseOp::get_op_from_index(&idx[0]).ok_or_else(|| {
+                            TractError::msg("TypedBinOp: failed to parse CustomBinOp index")
+                        })?;
+                    ElementWiseOp(op, None)
+                };
+                let eval: TValue = {
+                    let eval = element_wise_op.eval(trac_input)?;
                     println!("eval:{:?}", eval);
                     eval[0].clone()
                 };
@@ -1141,15 +1184,26 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
                 vec![CustomDatumType::get_index_from_datum_type(op.to)],
             );
         } else if let Some(op) = node.op.as_any().downcast_ref::<TypedBinOp>() {
-            // TODO: Consider all math ops
+            // TODO: Consider all TypedBin ops
             let idx = match CustomBinOp::get_index_from_op(&*op.0) {
                 Some(idx) => idx,
                 None => {
-                    println!("Should be parsed between 0 to 6");
+                    println!("TypedBinOp: should be parsed between 0 to 6");
                     0
                 }
             };
-            attributes.insert("bin_op".to_string(), vec![idx]);
+            attributes.insert("bin_op_idx".to_string(), vec![idx]);
+        } else if let Some(op) = node.op.as_any().downcast_ref::<ElementWiseOp>() {
+            println!("Hello");
+            // TODO: Consider all ElementWise ops
+            let idx = match CustomElementWiseOp::get_index_from_op(&*op.0) {
+                Some(idx) => idx,
+                None => {
+                    println!("ElementWiseOp: should be parsed between 0 to 24");
+                    0
+                }
+            };
+            attributes.insert("element_wise_op_idx".to_string(), vec![idx]);
         }
 
         SerializableNode {
@@ -1325,8 +1379,7 @@ impl Model {
                         Some(x) => x,
                         None => return Err(GraphError::MissingBatchSize),
                     };
-                    fact.shape
-                        .set_dim(i, tract_onnx::prelude::TDim::Val(*batch_size as i64));
+                    fact.shape.set_dim(i, TDim::Val(*batch_size as i64));
                 }
             }
 

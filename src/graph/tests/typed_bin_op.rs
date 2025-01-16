@@ -14,7 +14,7 @@ fn test_typedbinop_add_basic() {
 
     // TypedBin node (id: 2)
     let mut attributes = HashMap::new();
-    attributes.insert("bin_op".to_string(), vec![0]); // Add operation
+    attributes.insert("bin_op_idx".to_string(), vec![0]); // Add operation
 
     nodes.insert(
         2,
@@ -65,7 +65,7 @@ fn test_typedbinop_add_multi_dimension() {
 
     // TypedBin node (id: 2)
     let mut attributes = HashMap::new();
-    attributes.insert("bin_op".to_string(), vec![0]); // Add operation
+    attributes.insert("bin_op_idx".to_string(), vec![0]); // Add operation
 
     nodes.insert(
         2,
@@ -125,7 +125,7 @@ fn test_typedbinop_sub_basic() {
 
     // TypedBin node (id: 2)
     let mut attributes = HashMap::new();
-    attributes.insert("bin_op".to_string(), vec![1]);
+    attributes.insert("bin_op_idx".to_string(), vec![1]);
 
     nodes.insert(
         2,
@@ -176,7 +176,7 @@ fn test_typedbinop_sub_multi_dimension() {
 
     // TypedBin node (id: 2)
     let mut attributes = HashMap::new();
-    attributes.insert("bin_op".to_string(), vec![1]); // Operation along axis 1
+    attributes.insert("bin_op_idx".to_string(), vec![1]); // Operation along axis 1
 
     nodes.insert(
         2,
@@ -236,7 +236,7 @@ fn test_typedbinop_pow_basic() {
 
     // TypedBin node (id: 2)
     let mut attributes = HashMap::new();
-    attributes.insert("bin_op".to_string(), vec![4]); // Pow operation
+    attributes.insert("bin_op_idx".to_string(), vec![4]); // Pow operation
 
     nodes.insert(
         2,
@@ -287,7 +287,7 @@ fn test_typedbinop_pow_multi_dimension() {
 
     // TypedBin node (id: 2)
     let mut attributes = HashMap::new();
-    attributes.insert("bin_op".to_string(), vec![4]); // Pow operation
+    attributes.insert("bin_op_idx".to_string(), vec![4]); // Pow operation
 
     nodes.insert(
         2,

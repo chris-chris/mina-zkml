@@ -5,7 +5,10 @@ use kimchi::circuits::{
 use mina_curves::pasta::Fp;
 use tract_onnx::prelude::*;
 
-use crate::graph::model::{OperationType, SerializableNode};
+use crate::graph::{
+    model::{OperationType, SerializableNode},
+    tract_integration::types::{CustomBinOp, CustomElementWiseOp},
+};
 use anyhow::Result;
 
 /// Maps ONNX operations to Kimchi circuit gates
@@ -192,17 +195,21 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found Sigmoid operation");
             Some(OperationType::Sigmoid)
         }
-        // TypedBinOp
-        name if name == *"Add"
-            || name == *"Sub"
-            || name == *"Mul"
-            || name == *"Div"
-            || name == *"Pow"
-            || name == *"Max"
-            || name == *"Min" =>
+        // BinOp
+        name if CustomBinOp::BIN_OP_MAP
+            .iter()
+            .any(|(bin_name, _, _)| *bin_name == name) =>
         {
             println!("Found TypedBin operation: {}", name);
             Some(OperationType::TypedBin)
+        }
+        // ElementWiseOp
+        name if CustomElementWiseOp::ELEMENTWISE_OP_MAP
+            .iter()
+            .any(|(bin_name, _, _)| *bin_name == name) =>
+        {
+            println!("Found ElementWiseOp operation: {}", name);
+            Some(OperationType::ElementWiseOp)
         }
         name if name == *"AddAxis" => {
             println!("Found AddAxis operation: {}", name);

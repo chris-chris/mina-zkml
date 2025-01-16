@@ -6,6 +6,7 @@ use tract_onnx::prelude::{Node as OnnxNode, SymbolValues, TypedFact, TypedOp};
 use tract_onnx::tract_core::ops::cnn::{KernelFormat, PaddingSpec};
 use tract_onnx::tract_hir::ops::cnn::PoolSpec;
 
+// TODO: refactor duplicate functions
 pub fn handle_pool_spec(
     attributes: &mut HashMap<String, Vec<usize>>,
     pool_spec: &PoolSpec,
@@ -263,7 +264,7 @@ pub fn create_reduce_node(
     })
 }
 
-// Utility function to create a Reduce node
+// Utility function to create a TypeBinOp node
 pub fn create_typedbin_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
@@ -276,6 +277,36 @@ pub fn create_typedbin_node(
         out_scale: 1,
         id,
         op_type: OperationType::TypedBin,
+        op_params: None,
+        attributes: attributes
+            .into_iter()
+            .map(|(key, value)| {
+                // Map each value to usize explicitly
+                (
+                    key,
+                    value
+                        .into_iter()
+                        .map(|v| v as usize)
+                        .collect::<Vec<usize>>(),
+                )
+            })
+            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
+    })
+}
+
+// Utility function to create a ElementWiseOp node
+pub fn create_elementwise_node(
+    id: usize,
+    inputs: Vec<(usize, usize)>,
+    out_dims: Vec<usize>,
+    attributes: HashMap<String, Vec<i32>>,
+) -> NodeType {
+    NodeType::Node(SerializableNode {
+        inputs,
+        out_dims,
+        out_scale: 1,
+        id,
+        op_type: OperationType::ElementWiseOp,
         op_params: None,
         attributes: attributes
             .into_iter()

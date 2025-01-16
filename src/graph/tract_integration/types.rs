@@ -1,55 +1,9 @@
-use anyhow::Error;
-use std::fmt::Debug;
-use tract_data::internal::tract_smallvec::smallvec;
-use tract_onnx::prelude::Datum;
 use tract_onnx::prelude::*;
 use tract_onnx::tract_core::ops::binary::BinMiniOp;
-pub use tract_onnx::tract_core::ops::nn::Reducer;
-use tract_onnx::tract_hir::ops::math::{Add, Div, Max, Min, Mul, Pow, Sub};
-
-pub fn vec_to_eval_input<T: Debug + Datum + Copy>(
-    dims: &[usize],
-    data: &[T],
-) -> TractResult<TVec<TValue>> {
-    if dims.len() > 4 {
-        return Err(Error::msg(format!(
-            "Invalid dimensions: dims has more than 4 elements (dims.len() = {})",
-            dims.len()
-        )));
-    }
-
-    let mut shape: [usize; 4] = [1; 4];
-    for (i, &dim) in dims.iter().enumerate() {
-        shape[i] = dim;
-    }
-
-    let tensor_data = Tensor::from_shape(&shape, data)?;
-    let tvec = smallvec![TValue::from_const(Arc::new(tensor_data))];
-
-    Ok(tvec)
-}
-
-pub fn vec_to_tensor<T: Debug + Datum + Copy>(dims: &[usize], data: &[T]) -> TractResult<Tensor> {
-    if dims.len() > 4 {
-        return Err(Error::msg(format!(
-            "Invalid dimensions: dims has more than 4 elements (dims.len() = {})",
-            dims.len()
-        )));
-    }
-
-    let mut shape: [usize; 4] = [1; 4];
-    for (i, &dim) in dims.iter().enumerate() {
-        shape[i] = dim;
-    }
-
-    let tensor_data = Tensor::from_shape(&shape, data)?;
-
-    Ok(tensor_data)
-}
-
-pub fn tensor_to_vec<T: Datum>(tensor: &Tensor) -> TractResult<Vec<T>> {
-    Ok(tensor.as_slice::<T>()?.to_vec())
-}
+use tract_onnx::tract_core::ops::nn::Reducer;
+use tract_onnx::tract_hir::internal::ElementWiseMiniOp;
+use tract_onnx::tract_hir::ops::math::Rem;
+use tract_onnx::tract_hir::ops::math::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CustomReducer {
@@ -152,11 +106,16 @@ pub enum CustomBinOp {
     Mul,
     Div,
     Pow,
+    Max,
+    Min,
+    Rem,
+    ShiftLeft,
+    ShiftRight,
 }
 
 impl CustomBinOp {
     /// Map between names, indices, and `CustomBinOp` variants.
-    const BIN_OP_MAP: &'static [(&'static str, &dyn BinMiniOp, usize)] = &[
+    pub const BIN_OP_MAP: &'static [(&'static str, &dyn BinMiniOp, usize)] = &[
         ("Add", &Add, 0),
         ("Sub", &Sub, 1),
         ("Mul", &Mul, 2),
@@ -164,6 +123,9 @@ impl CustomBinOp {
         ("Pow", &Pow, 4),
         ("Max", &Max, 5),
         ("Min", &Min, 6),
+        ("Rem", &Rem, 7),
+        ("ShiftLeft", &ShiftLeft, 8),
+        ("ShiftRight", &ShiftRight, 9),
     ];
 
     /// Get the index from a `BinMiniOp` by matching its name.
@@ -185,7 +147,91 @@ impl CustomBinOp {
             4 => Some(Box::new(Pow)),
             5 => Some(Box::new(Max)),
             6 => Some(Box::new(Min)),
+            7 => Some(Box::new(Rem)),
+            8 => Some(Box::new(ShiftLeft)),
+            9 => Some(Box::new(ShiftRight)),
             _ => None,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CustomElementWiseOp {
+    Abs,
+    Exp,
+    Ln,
+    Square,
+    Sqrt,
+    Recip,
+    Rsqrt,
+    Ceil,
+    Floor,
+    Round,
+    Cos,
+    Sin,
+    Tan,
+    Acos,
+    Asin,
+    Atan,
+    Cosh,
+    Sinh,
+    Tanh,
+    Erf,
+    Atanh,
+    Acosh,
+    Asinh,
+    Neg,
+    Sign,
+}
+
+impl CustomElementWiseOp {
+    /// Map between names, actual Tract operations, and indices for `CustomElementWiseOp`.
+    pub const ELEMENTWISE_OP_MAP: &'static [(
+        &'static str,
+        fn() -> Box<dyn ElementWiseMiniOp>,
+        usize,
+    )] = &[
+        ("Abs", || Box::new(Abs {}), 0),
+        ("Exp", || Box::new(Exp {}), 1),
+        ("Ln", || Box::new(Ln {}), 2),
+        ("Square", || Box::new(Square {}), 3),
+        ("Sqrt", || Box::new(Sqrt {}), 4),
+        ("Recip", || Box::new(Recip {}), 5),
+        ("Rsqrt", || Box::new(Rsqrt {}), 6),
+        ("Ceil", || Box::new(Ceil {}), 7),
+        ("Floor", || Box::new(Floor {}), 8),
+        ("Round", || Box::new(Round {}), 9),
+        ("Cos", || Box::new(Cos {}), 10),
+        ("Sin", || Box::new(Sin {}), 11),
+        ("Tan", || Box::new(Tan {}), 12),
+        ("Acos", || Box::new(Acos {}), 13),
+        ("Asin", || Box::new(Asin {}), 14),
+        ("Atan", || Box::new(Atan {}), 15),
+        ("Cosh", || Box::new(Cosh {}), 16),
+        ("Sinh", || Box::new(Sinh {}), 17),
+        ("Tanh", || Box::new(Tanh {}), 18),
+        ("Erf", || Box::new(Erf {}), 19),
+        ("Atanh", || Box::new(Atanh {}), 20),
+        ("Acosh", || Box::new(Acosh {}), 21),
+        ("Asinh", || Box::new(Asinh {}), 22),
+        ("Neg", || Box::new(Neg {}), 23),
+        ("Sign", || Box::new(Sign {}), 24),
+    ];
+
+    /// Get the index from an `ElementWiseMiniOp` by matching its name.
+    pub fn get_index_from_op(op: &dyn ElementWiseMiniOp) -> Option<usize> {
+        let op_name = op.name();
+        Self::ELEMENTWISE_OP_MAP
+            .iter()
+            .find(|(name, _, _)| *name == op_name)
+            .map(|(_, _, index)| *index)
+    }
+
+    /// Get the `CustomElementWiseOp` from an index.
+    pub fn get_op_from_index(index: &usize) -> Option<Box<dyn ElementWiseMiniOp>> {
+        Self::ELEMENTWISE_OP_MAP
+            .iter()
+            .find(|(_, _, i)| i == index)
+            .map(|(_, op_fn, _)| op_fn())
     }
 }

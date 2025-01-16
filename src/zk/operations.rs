@@ -201,6 +201,10 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found Add operation: {}", name);
             Some(OperationType::Add)
         }
+        name if name == *"Sub" => {
+            println!("Found Sub operation: {}", name);
+            Some(OperationType::TypedBin)
+        }
         name if name == *"AddAxis" => {
             println!("Found AddAxis operation: {}", name);
             Some(OperationType::AddAxis)

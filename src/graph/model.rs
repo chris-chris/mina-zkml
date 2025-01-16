@@ -13,14 +13,17 @@ use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
 };
+use tract_data::internal::tract_smallvec::smallvec;
 use tract_data::internal::tract_smallvec::ToSmallVec;
 use tract_onnx::prelude::*;
 use tract_onnx::tract_core::ops::array::Gather;
+use tract_onnx::tract_core::ops::binary::TypedBinOp;
 use tract_onnx::tract_core::ops::cast::Cast;
 use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
 use tract_onnx::tract_core::ops::nn::{Reduce, Softmax, SoftmaxExp};
 use tract_onnx::tract_core::ops::EvalOp;
 use tract_onnx::tract_hir::internal::AxisOp;
+use tract_onnx::tract_hir::ops::math::Sub;
 use tract_onnx::{tract_hir::ops::konst::Const, tract_hir::ops::scan::Scan};
 
 /// Type alias for the graph loading result
@@ -48,6 +51,7 @@ pub enum OperationType {
     Reduce,
     AddAxis,
     Cast,
+    TypedBin,
 }
 
 /// Serializable version of OutletId
@@ -385,6 +389,53 @@ impl ParsedNodes {
                 // return res from eval
                 // let casting = tensor_input.cast_to_dt(datum_type)?;
                 // let res: Vec<f32> = insputs.iter().map(|&x| x as f32).collect();
+            }
+            OperationType::TypedBin => {
+                if inputs.len() != 2 {
+                    return Err(GraphError::InvalidInput(format!(
+                        "TypedBin: input len({}) is invalid",
+                        inputs.len()
+                    )));
+                }
+                // parse a
+                let a = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+                let a_dims: Vec<usize> = match a {
+                    NodeType::Node(input) => input.out_dims.clone(),
+                    _ => return Err(GraphError::InvalidNodeType),
+                };
+                let a_f64: Vec<f64> = inputs[0].iter().map(|&x| x as f64).collect();
+                let a_eval = vec_to_eval_input(&a_dims, &a_f64)?;
+
+                // parse b
+                let b: &NodeType = self
+                    .nodes
+                    .get(&node.inputs[1].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+                let b_dims: Vec<usize> = match b {
+                    NodeType::Node(input) => input.out_dims.clone(),
+                    _ => return Err(GraphError::InvalidNodeType),
+                };
+                let b_f64: Vec<f64> = inputs[1].iter().map(|&x| x as f64).collect();
+                let b_eval = vec_to_eval_input(&b_dims, &b_f64)?;
+
+                let typed_bin_inputs: TVec<TValue> =
+                    smallvec![a_eval[0].clone(), b_eval[0].clone()];
+                println!("typed_bin_inputs:{:?}", typed_bin_inputs);
+
+                let sub = TypedBinOp(Box::new(Sub), None);
+                let eval: TValue = {
+                    let eval = sub.eval(typed_bin_inputs)?;
+                    println!("eval:{:?}", eval);
+                    eval[0].clone()
+                };
+
+                let res_f64 = tensor_to_vec::<f64>(&eval.into_tensor())?;
+                let res: Vec<f32> = res_f64.iter().map(|&x| x as f32).collect();
+
+                Ok(vec![res])
             }
             OperationType::Reduce => {
                 if inputs.len() != 1 {
@@ -1023,7 +1074,9 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
     fn from(node: &Node<TypedFact, Box<dyn TypedOp>>) -> Self {
         let op_name = node.op.name();
 
-        let op_type = if op_name == "Const" {
+        println!("node.op111:{:?}", node.op);
+
+        let op_type: OperationType = if op_name == "Const" {
             println!("Found Const operation");
             OperationType::Const
         } else if node.inputs.is_empty() {
@@ -1086,6 +1139,11 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
                 "to".to_string(),
                 vec![CustomDatumType::get_index_from_datum_type(op.to)],
             );
+        } else if let Some(op) = node.op.as_any().downcast_ref::<TypedBinOp>() {
+            // attributes.insert(
+            //     "bin_op".to_string(),
+            //     vec![CustomTypedBinOp::get_index_from_datum_type(op.to)],
+            // );
         }
 
         SerializableNode {

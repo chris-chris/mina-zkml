@@ -263,6 +263,36 @@ pub fn create_reduce_node(
     })
 }
 
+// Utility function to create a Reduce node
+pub fn create_typedbin_node(
+    id: usize,
+    inputs: Vec<(usize, usize)>,
+    out_dims: Vec<usize>,
+    attributes: HashMap<String, Vec<i32>>,
+) -> NodeType {
+    NodeType::Node(SerializableNode {
+        inputs,
+        out_dims,
+        out_scale: 1,
+        id,
+        op_type: OperationType::TypedBin,
+        op_params: None,
+        attributes: attributes
+            .into_iter()
+            .map(|(key, value)| {
+                // Map each value to usize explicitly
+                (
+                    key,
+                    value
+                        .into_iter()
+                        .map(|v| v as usize)
+                        .collect::<Vec<usize>>(),
+                )
+            })
+            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
+    })
+}
+
 // Utility function to create a MaxPool node
 pub fn create_max_pool_node(
     id: usize,

@@ -165,6 +165,10 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found Const operation");
             Some(OperationType::Const)
         }
+        name if name == *"Cast" => {
+            println!("Found Cast operation");
+            Some(OperationType::Cast)
+        }
         name if name == *"Conv" => {
             println!("Found Conv operation");
             Some(OperationType::Conv)

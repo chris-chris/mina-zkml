@@ -96,22 +96,55 @@ impl CustomReducer {
             .find(|(_, _, idx)| *idx == index)
             .map(|(_, reducer, _)| *reducer)
     }
+}
 
-    // /// Get the index of the current `CustomReducer` variant.
-    // pub fn get_index_from_custom(&self) -> usize {
-    //     Self::REDUCER_MAP
-    //         .iter()
-    //         .find(|(custom, _, _)| custom == self)
-    //         .map(|(_, _, index)| *index)
-    //         .expect("Invalid CustomReducer variant")
-    // }
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub enum CustomDatumType {
+    Binary,
+    U8,
+    U16,
+    U32,
+    U64,
+    I8,
+    I16,
+    I32,
+    I64,
+    F16,
+    F32,
+    F64,
+}
 
-    // /// Convert the current `CustomReducer` to its corresponding `Reducer`.
-    // pub fn to_reducer(&self) -> Reducer {
-    //     Self::REDUCER_MAP
-    //         .iter()
-    //         .find(|(custom, _, _)| custom == self)
-    //         .map(|(_, reducer, _)| *reducer)
-    //         .expect("Invalid CustomReducer variant")
-    // }
+impl CustomDatumType {
+    /// Map between `CustomDatumType`, `DatumType`, and their corresponding indices.
+    const DATUM_MAP: &'static [(Self, DatumType, usize)] = &[
+        (Self::Binary, DatumType::Bool, 0),
+        (Self::U8, DatumType::U8, 1),
+        (Self::U16, DatumType::U16, 2),
+        (Self::U32, DatumType::U32, 3),
+        (Self::U64, DatumType::U64, 4),
+        (Self::I8, DatumType::I8, 5),
+        (Self::I16, DatumType::I16, 6),
+        (Self::I32, DatumType::I32, 7),
+        (Self::I64, DatumType::I64, 8),
+        (Self::F16, DatumType::F16, 9),
+        (Self::F32, DatumType::F32, 10),
+        (Self::F64, DatumType::F64, 11),
+    ];
+
+    /// Get the index of a given `DatumType`.
+    pub fn get_index_from_datum_type(datum: DatumType) -> usize {
+        Self::DATUM_MAP
+            .iter()
+            .find(|(_, original, _)| *original == datum)
+            .map(|(_, _, index)| *index)
+            .expect("Invalid DatumType variant")
+    }
+
+    /// Get the `DatumType` corresponding to a given index.
+    pub fn get_datum_type_from_index(index: usize) -> Option<DatumType> {
+        Self::DATUM_MAP
+            .iter()
+            .find(|(_, _, idx)| *idx == index)
+            .map(|(_, datum, _)| *datum)
+    }
 }

@@ -16,6 +16,7 @@ use std::{
 use tract_data::internal::tract_smallvec::ToSmallVec;
 use tract_onnx::prelude::*;
 use tract_onnx::tract_core::ops::array::Gather;
+use tract_onnx::tract_core::ops::cast::Cast;
 use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
 use tract_onnx::tract_core::ops::nn::{Reduce, Softmax, SoftmaxExp};
 use tract_onnx::tract_core::ops::EvalOp;
@@ -46,6 +47,7 @@ pub enum OperationType {
     Softmax,
     Reduce,
     AddAxis,
+    Cast,
 }
 
 /// Serializable version of OutletId
@@ -343,6 +345,47 @@ impl ParsedNodes {
     ) -> Result<Vec<Vec<f32>>, GraphError> {
         let result = match node.op_type {
             OperationType::Input => Ok(inputs.to_vec()),
+            OperationType::Cast => {
+                if inputs.len() != 1 {
+                    return Err(GraphError::InvalidInput(format!(
+                        "Cast: input len({}) is invalid",
+                        inputs.len()
+                    )));
+                }
+                let res: Vec<f32> = inputs[0].iter().map(|&x| x as f32).collect();
+
+                Ok(vec![res])
+
+                // TODO: Should fix the return type of execute_operation from f32 to generic
+
+                // // parse input_dims
+                // let input_node = self
+                //     .nodes
+                //     .get(&node.inputs[0].0)
+                //     .ok_or(GraphError::NodeNotFound)?;
+                // let input_dims: Vec<usize> = match input_node {
+                //     NodeType::Node(input) => input.out_dims.clone(),
+                //     _ => return Err(GraphError::InvalidNodeType),
+                // };
+
+                // // get tensor_input
+                // let inputs_f64: Vec<f64> = inputs[0].iter().map(|&x| x as f64).collect();
+                // let tensor_input: Tensor = vec_to_tensor(&input_dims, &inputs_f64)?;
+
+                // // get DatumType attributes
+                // let datum_type = {
+                //     let datum_type_idx: usize = *get_value_from_attributes("to", &node.attributes)?
+                //         .first()
+                //         .unwrap_or(&0);
+
+                //     CustomDatumType::get_datum_type_from_index(datum_type_idx)
+                //         .ok_or_else(|| TractError::msg("Failed to parse datum type"))?
+                // };
+
+                // return res from eval
+                // let casting = tensor_input.cast_to_dt(datum_type)?;
+                // let res: Vec<f32> = insputs.iter().map(|&x| x as f32).collect();
+            }
             OperationType::Reduce => {
                 if inputs.len() != 1 {
                     return Err(GraphError::InvalidInput(format!(
@@ -1038,6 +1081,11 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
                 // TODO: Should consider Rm, Move, Reshape
                 _ => attributes.insert("axis".to_string(), vec![0]),
             };
+        } else if let Some(op) = node.op.as_any().downcast_ref::<Cast>() {
+            attributes.insert(
+                "to".to_string(),
+                vec![CustomDatumType::get_index_from_datum_type(op.to)],
+            );
         }
 
         SerializableNode {

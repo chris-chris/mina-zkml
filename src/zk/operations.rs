@@ -5,7 +5,10 @@ use kimchi::circuits::{
 use mina_curves::pasta::Fp;
 use tract_onnx::prelude::*;
 
-use crate::graph::model::{OperationType, SerializableNode};
+use crate::graph::{
+    model::{OperationType, SerializableNode},
+    tract_integration::types::{CustomBinOp, CustomElementWiseOp},
+};
 use anyhow::Result;
 
 /// Maps ONNX operations to Kimchi circuit gates
@@ -149,7 +152,6 @@ pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
         OperationType::Sigmoid => Some(OnnxOperation::Sigmoid),
         OperationType::Add => Some(OnnxOperation::Add),
         OperationType::EinSum => Some(OnnxOperation::EinSum),
-        OperationType::Max => Some(OnnxOperation::Max),
         OperationType::RmAxis => Some(OnnxOperation::RmAxis),
         OperationType::Reshape => Some(OnnxOperation::Reshape),
         _ => None,
@@ -164,6 +166,10 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
         name if name == *"Const" => {
             println!("Found Const operation");
             Some(OperationType::Const)
+        }
+        name if name == *"Cast" => {
+            println!("Found Cast operation");
+            Some(OperationType::Cast)
         }
         name if name == *"Conv" => {
             println!("Found Conv operation");
@@ -181,33 +187,57 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found matrix operation: {}", name);
             Some(OperationType::EinSum)
         }
-        name if name == *"Relu" || name == *"Max" => {
-            println!("Found ReLU/Max operation: {}", name);
-            if name == *"Max" {
-                Some(OperationType::Max)
-            } else {
-                Some(OperationType::Relu)
-            }
+        name if name == *"Relu" => {
+            println!("Found ReLU operation: {}", name);
+            Some(OperationType::Relu)
         }
         name if name == *"Sigmoid" => {
             println!("Found Sigmoid operation");
             Some(OperationType::Sigmoid)
         }
-        name if name == *"Add" => {
-            println!("Found Add operation: {}", name);
-            Some(OperationType::Add)
+        // BinOp
+        name if CustomBinOp::BIN_OP_MAP
+            .iter()
+            .any(|(bin_name, _, _)| *bin_name == name) =>
+        {
+            println!("Found TypedBinOp operation: {}", name);
+            Some(OperationType::TypedBinOp)
+        }
+        // ElementWiseOp
+        name if CustomElementWiseOp::ELEMENTWISE_OP_MAP
+            .iter()
+            .any(|(bin_name, _, _)| *bin_name == name) =>
+        {
+            println!("Found ElementWiseOp operation: {}", name);
+            Some(OperationType::ElementWiseOp)
+        }
+        name if name == *"AddAxis" => {
+            println!("Found AddAxis operation: {}", name);
+            Some(OperationType::AddAxis)
         }
         name if name == *"Reshape" => {
             println!("Found Reshape operation");
             Some(OperationType::Reshape)
         }
-        name if name.starts_with("Rm(") => {
+        name if name.starts_with("RmAxis") => {
             println!("Found RmAxis operation");
             Some(OperationType::RmAxis)
+        }
+        name if name.starts_with("Gather") => {
+            println!("Found Gather operation");
+            Some(OperationType::Gather)
+        }
+        name if name.starts_with("Reduce") => {
+            println!("Found Reduce operation");
+            Some(OperationType::Reduce)
         }
         name if name == *"Source" => {
             println!("Found Input operation");
             Some(OperationType::Input)
+        }
+        name if name == *"Softmax" => {
+            println!("Found Input operation");
+            Some(OperationType::Softmax)
         }
         name => {
             println!("Unknown operation: {}", name);

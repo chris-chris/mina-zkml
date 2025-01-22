@@ -44,7 +44,7 @@ fn test_scenario(visibility: VarVisibility) -> Result<(), Box<dyn std::error::Er
 
     // 5. Verify the proof
     println!("Verifying proof...");
-    let input_for_verify = Some(&input[..]); // Input is public
+    let _input_for_verify = Some(&input[..]); // Input is public
     let output_for_verify = None; // Output is private
 
     // Convert input to correct format for verification

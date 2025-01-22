@@ -309,7 +309,7 @@ impl ProverSystem {
                             }
                         }
                     }
-                    OperationType::Relu | OperationType::Max => {
+                    OperationType::Relu => {
                         if let Some((input_idx, _)) = node.inputs.first() {
                             if let Some(&input_row) = intermediate_values.get(input_idx) {
                                 let size = node.out_dims.iter().product();

@@ -1,3 +1,11 @@
+//! Custom types and operations for Tract integration.
+//!
+//! This module defines enums and helper methods to represent and map custom reducers,
+//! binary operations, and element-wise operations to Tract's internal structures.
+//!
+//! These custom types provide flexibility for extending Tract's functionality and
+//! simplifying integration with user-defined operations.
+
 use tract_onnx::prelude::*;
 use tract_onnx::tract_core::internal::ElementWiseMiniOp;
 use tract_onnx::tract_core::ops::binary::BinMiniOp;
@@ -7,6 +15,10 @@ use tract_onnx::tract_core::ops::nn::Reducer;
 
 type ElementWiseOpEntry = (&'static str, fn() -> Box<dyn ElementWiseMiniOp>, usize);
 
+/// Represents custom reducers and their mappings to Tract's `Reducer` variants.
+///
+/// Custom reducers allow for more intuitive integration and manipulation of reduction
+/// operations in the Tract graph.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CustomReducer {
     ArgMax(bool),
@@ -19,7 +31,7 @@ pub enum CustomReducer {
 }
 
 impl CustomReducer {
-    /// Map between `CustomReducer`, `Reducer`, and their corresponding indices.
+    /// A static mapping of `CustomReducer` to `Reducer` and their indices.
     const REDUCER_MAP: &'static [(Self, Reducer, usize)] = &[
         (Self::ArgMax(true), Reducer::ArgMax(true), 0),
         (Self::ArgMax(false), Reducer::ArgMax(false), 1),
@@ -32,7 +44,19 @@ impl CustomReducer {
         (Self::MeanOfSquares, Reducer::MeanOfSquares, 8),
     ];
 
-    /// Get the index of a given `Reducer`.
+    /// Gets the index corresponding to a given `Reducer`.
+    ///
+    /// # Panics
+    /// This method panics if the given `Reducer` is not found in the map.
+    ///
+    /// # Examples
+    /// ```
+    /// use your_crate::CustomReducer;
+    /// use tract_onnx::tract_core::ops::nn::Reducer;
+    ///
+    /// let index = CustomReducer::get_index_from_reducer(Reducer::Sum);
+    /// assert_eq!(index, 7);
+    /// ```
     pub fn get_index_from_reducer(reducer: Reducer) -> usize {
         Self::REDUCER_MAP
             .iter()
@@ -41,7 +65,16 @@ impl CustomReducer {
             .expect("Invalid Reducer variant")
     }
 
-    /// Get the `Reducer` corresponding to a given index.
+    /// Gets the `Reducer` corresponding to a given index.
+    ///
+    /// # Examples
+    /// ```
+    /// use your_crate::CustomReducer;
+    /// use tract_onnx::tract_core::ops::nn::Reducer;
+    ///
+    /// let reducer = CustomReducer::get_reducer_from_index(4).unwrap();
+    /// assert_eq!(reducer, Reducer::Max);
+    /// ```
     pub fn get_reducer_from_index(index: usize) -> Option<Reducer> {
         Self::REDUCER_MAP
             .iter()
@@ -50,6 +83,10 @@ impl CustomReducer {
     }
 }
 
+/// Represents custom data types and their mappings to Tract's `DatumType`.
+///
+/// This enum allows for flexible manipulation of data types within the graph
+/// and provides methods for converting between custom and standard types.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum CustomDatumType {
     Binary,
@@ -67,7 +104,7 @@ pub enum CustomDatumType {
 }
 
 impl CustomDatumType {
-    /// Map between `CustomDatumType`, `DatumType`, and their corresponding indices.
+    /// A static mapping of `CustomDatumType` to `DatumType` and their indices.
     const DATUM_MAP: &'static [(Self, DatumType, usize)] = &[
         (Self::Binary, DatumType::Bool, 0),
         (Self::U8, DatumType::U8, 1),
@@ -83,7 +120,19 @@ impl CustomDatumType {
         (Self::F64, DatumType::F64, 11),
     ];
 
-    /// Get the index of a given `DatumType`.
+    /// Gets the index corresponding to a given `DatumType`.
+    ///
+    /// # Panics
+    /// This method panics if the given `DatumType` is not found in the map.
+    ///
+    /// # Examples
+    /// ```
+    /// use your_crate::CustomDatumType;
+    /// use tract_onnx::prelude::DatumType;
+    ///
+    /// let index = CustomDatumType::get_index_from_datum_type(DatumType::I32);
+    /// assert_eq!(index, 7);
+    /// ```
     pub fn get_index_from_datum_type(datum: DatumType) -> usize {
         Self::DATUM_MAP
             .iter()
@@ -92,7 +141,16 @@ impl CustomDatumType {
             .expect("Invalid DatumType variant")
     }
 
-    /// Get the `DatumType` corresponding to a given index.
+    /// Gets the `DatumType` corresponding to a given index.
+    ///
+    /// # Examples
+    /// ```
+    /// use your_crate::CustomDatumType;
+    /// use tract_onnx::prelude::DatumType;
+    ///
+    /// let datum = CustomDatumType::get_datum_type_from_index(10).unwrap();
+    /// assert_eq!(datum, DatumType::F32);
+    /// ```
     pub fn get_datum_type_from_index(index: usize) -> Option<DatumType> {
         Self::DATUM_MAP
             .iter()
@@ -101,6 +159,10 @@ impl CustomDatumType {
     }
 }
 
+/// Represents custom binary operations and their mappings to Tract's `BinMiniOp`.
+///
+/// This enum provides a set of binary operations that can be used within
+/// Tract models, along with methods for converting between indices and operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CustomBinOp {
     Add,
@@ -116,7 +178,7 @@ pub enum CustomBinOp {
 }
 
 impl CustomBinOp {
-    /// Map between names, indices, and `CustomBinOp` variants.
+    /// A static mapping of binary operation names, Tract `BinMiniOp`, and their indices.
     pub const BIN_OP_MAP: &'static [(&'static str, &dyn BinMiniOp, usize)] = &[
         ("Add", &Add, 0),
         ("Sub", &Sub, 1),
@@ -130,7 +192,16 @@ impl CustomBinOp {
         ("ShiftRight", &ShiftRight, 9),
     ];
 
-    /// Get the index from a `BinMiniOp` by matching its name.
+    /// Get the index of a binary operation by matching its name.
+    ///
+    /// # Examples
+    /// ```
+    /// use your_crate::CustomBinOp;
+    /// use tract_onnx::tract_core::ops::math::Add;
+    ///
+    /// let index = CustomBinOp::get_index_from_op(&Add).unwrap();
+    /// assert_eq!(index, 0);
+    /// ```
     pub fn get_index_from_op(op: &dyn BinMiniOp) -> Option<usize> {
         let op_name = op.name();
         Self::BIN_OP_MAP
@@ -139,7 +210,16 @@ impl CustomBinOp {
             .map(|(_, _, index)| *index)
     }
 
-    /// Get the `CustomBinOp` from an index.
+    /// Get the `CustomBinOp` corresponding to an index.
+    ///
+    /// # Examples
+    /// ```
+    /// use your_crate::CustomBinOp;
+    /// use tract_onnx::tract_core::ops::binary::BinMiniOp;
+    ///
+    /// let op = CustomBinOp::get_op_from_index(&0).unwrap();
+    /// assert_eq!(op.name(), "Add");
+    /// ```
     pub fn get_op_from_index(index: &usize) -> Option<Box<dyn BinMiniOp>> {
         match index {
             0 => Some(Box::new(Add)),
@@ -157,6 +237,10 @@ impl CustomBinOp {
     }
 }
 
+/// Represents custom element-wise operations and their mappings to Tract's `ElementWiseMiniOp`.
+///
+/// This enum provides a set of element-wise operations commonly used in machine learning
+/// models, along with methods for converting between indices and operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CustomElementWiseOp {
     Abs,
@@ -187,7 +271,7 @@ pub enum CustomElementWiseOp {
 }
 
 impl CustomElementWiseOp {
-    /// Map between names, actual Tract operations, and indices for `CustomElementWiseOp`.
+    /// A static mapping of element-wise operation names, Tract operations, and their indices.
     pub const ELEMENTWISE_OP_MAP: &'static [ElementWiseOpEntry] = &[
         ("Abs", || Box::new(Abs {}), 0),
         ("Exp", || Box::new(Exp {}), 1),
@@ -216,7 +300,17 @@ impl CustomElementWiseOp {
         ("Sign", || Box::new(Sign {}), 24),
     ];
 
-    /// Get the index from an `ElementWiseMiniOp` by matching its name.
+    /// Get the index of an element-wise operation by matching its name.
+    ///
+    /// # Examples
+    /// ```
+    /// use your_crate::CustomElementWiseOp;
+    /// use tract_onnx::tract_core::internal::ElementWiseMiniOp;
+    ///
+    /// let op = tract_onnx::tract_core::ops::math::Ln {};
+    /// let index = CustomElementWiseOp::get_index_from_op(&op).unwrap();
+    /// assert_eq!(index, 2);
+    /// ```
     pub fn get_index_from_op(op: &dyn ElementWiseMiniOp) -> Option<usize> {
         let op_name = op.name();
         Self::ELEMENTWISE_OP_MAP
@@ -225,7 +319,15 @@ impl CustomElementWiseOp {
             .map(|(_, _, index)| *index)
     }
 
-    /// Get the `CustomElementWiseOp` from an index.
+    /// Get the `CustomElementWiseOp` corresponding to an index.
+    ///
+    /// # Examples
+    /// ```
+    /// use your_crate::CustomElementWiseOp;
+    ///
+    /// let op = CustomElementWiseOp::get_op_from_index(&3).unwrap();
+    /// assert_eq!(op.name(), "Square");
+    /// ```
     pub fn get_op_from_index(index: &usize) -> Option<Box<dyn ElementWiseMiniOp>> {
         Self::ELEMENTWISE_OP_MAP
             .iter()

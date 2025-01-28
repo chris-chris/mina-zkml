@@ -17,26 +17,6 @@ use tract_onnx::tract_core::ops::cnn::{KernelFormat, PaddingSpec};
 /// * `pool_spec` - A reference to the PoolSpec containing the pooling specifications.
 /// * `kernel_fmt` - An optional reference to the KernelFormat.
 ///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use tract_onnx::tract_core::ops::cnn::{PoolSpec, KernelFormat, PaddingSpec};
-/// use your_crate_name::handle_pool_spec;
-///
-/// let mut attributes = HashMap::new();
-/// let pool_spec = PoolSpec {
-///     kernel_shape: vec![3, 3],
-///     strides: Some(vec![1, 1]),
-///     dilations: Some(vec![1, 1]),
-///     padding: PaddingSpec::Valid,
-/// };
-/// let kernel_fmt = Some(KernelFormat::OIHW);
-///
-/// handle_pool_spec(&mut attributes, &pool_spec, &kernel_fmt);
-/// assert_eq!(attributes.get("kernel_shape"), Some(&vec![3, 3]));
-/// ```
-///
 /// # Panics
 ///
 /// This function does not panic.
@@ -125,19 +105,6 @@ pub fn handle_pool_spec(
 /// A Result containing a vector of vectors of usize representing the output shapes,
 /// or a GraphError if the evaluation fails.
 ///
-/// # Examples
-///
-/// ```rust
-/// use tract_onnx::prelude::*;
-/// use your_crate_name::node_output_shapes;
-///
-/// let model = tract_onnx::onnx().model_for_path("some_model.onnx")?;
-/// let node = &model.nodes[0];
-/// let symbol_values = SymbolValues::default();
-///
-/// let shapes = node_output_shapes(node, &symbol_values)?;
-/// ```
-///
 /// # Errors
 ///
 /// Returns a GraphError if the shape evaluation fails.
@@ -179,22 +146,6 @@ pub fn node_output_shapes(
 /// # Returns
 ///
 /// A NodeType representing the created node.
-///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use your_crate_name::{create_node, OperationType};
-///
-/// let node = create_node(
-///     1,
-///     vec![(0, 0)],
-///     vec![1, 2, 3],
-///     OperationType::Conv,
-///     None,
-///     None,
-/// );
-/// ```
 ///
 /// # Panics
 ///
@@ -252,14 +203,6 @@ pub fn create_node(
 ///
 /// A NodeType representing the created Input node.
 ///
-/// # Examples
-///
-/// ```rust
-/// use your_crate_name::create_input_node;
-///
-/// let input_node = create_input_node(1, vec![1, 2, 3]);
-/// ```
-///
 /// # Panics
 ///
 /// This function does not panic.
@@ -288,14 +231,6 @@ pub fn create_input_node(id: usize, shape: Vec<usize>) -> NodeType {
 /// # Returns
 ///
 /// A NodeType representing the created Const node.
-///
-/// # Examples
-///
-/// ```rust
-/// use your_crate_name::create_const_node;
-///
-/// let const_node = create_const_node(1, vec![1, 2, 3], vec![0.1, 0.2, 0.3]);
-/// ```
 ///
 /// # Panics
 ///
@@ -327,16 +262,6 @@ pub fn create_const_node(id: usize, shape: Vec<usize>, values: Vec<f32>) -> Node
 /// # Returns
 ///
 /// A NodeType representing the created Conv node.
-///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use your_crate_name::create_conv_node;
-///
-/// let attributes = HashMap::new();
-/// let conv_node = create_conv_node(1, vec![(0, 0)], vec![1, 2, 3], attributes);
-/// ```
 ///
 /// # Panics
 ///
@@ -381,16 +306,6 @@ pub fn create_conv_node(
 ///
 /// A NodeType representing the created AddAxis node.
 ///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use your_crate_name::create_add_axis_node;
-///
-/// let attributes = HashMap::new();
-/// let add_axis_node = create_add_axis_node(1, vec![(0, 0)], vec![1, 2, 3], attributes);
-/// ```
-///
 /// # Panics
 ///
 /// This function does not panic.
@@ -433,16 +348,6 @@ pub fn create_add_axis_node(
 /// # Returns
 ///
 /// A NodeType representing the created Softmax node.
-///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use your_crate_name::create_softmax_node;
-///
-/// let attributes = HashMap::new();
-/// let softmax_node = create_softmax_node(1, vec![(0, 0)], vec![1, 2, 3], attributes);
-/// ```
 ///
 /// # Panics
 ///
@@ -487,16 +392,6 @@ pub fn create_softmax_node(
 ///
 /// A NodeType representing the created Gather node.
 ///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use your_crate_name::create_gather_node;
-///
-/// let attributes = HashMap::new();
-/// let gather_node = create_gather_node(1, vec![(0, 0)], vec![1, 2, 3], attributes);
-/// ```
-///
 /// # Panics
 ///
 /// This function does not panic.
@@ -539,16 +434,6 @@ pub fn create_gather_node(
 /// # Returns
 ///
 /// A NodeType representing the created Reduce node.
-///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use your_crate_name::create_reduce_node;
-///
-/// let attributes = HashMap::new();
-/// let reduce_node = create_reduce_node(1, vec![(0, 0)], vec![1, 2, 3], attributes);
-/// ```
 ///
 /// # Panics
 ///
@@ -593,16 +478,6 @@ pub fn create_reduce_node(
 ///
 /// A NodeType representing the created TypedBinOp node.
 ///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use your_crate_name::create_typedbin_node;
-///
-/// let attributes = HashMap::new();
-/// let typedbin_node = create_typedbin_node(1, vec![(0, 0)], vec![1, 2, 3], attributes);
-/// ```
-///
 /// # Panics
 ///
 /// This function does not panic.
@@ -645,16 +520,6 @@ pub fn create_typedbin_node(
 /// # Returns
 ///
 /// A NodeType representing the created ElementWiseOp node.
-///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use your_crate_name::create_elementwise_node;
-///
-/// let attributes = HashMap::new();
-/// let elementwise_node = create_elementwise_node(1, vec![(0, 0)], vec![1, 2, 3], attributes);
-/// ```
 ///
 /// # Panics
 ///
@@ -699,16 +564,6 @@ pub fn create_elementwise_node(
 ///
 /// A NodeType representing the created MaxPool node.
 ///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use your_crate_name::create_max_pool_node;
-///
-/// let attributes = HashMap::new();
-/// let max_pool_node = create_max_pool_node(1, vec![(0, 0)], vec![1, 2, 3], attributes);
-/// ```
-///
 /// # Panics
 ///
 /// This function does not panic.
@@ -750,19 +605,6 @@ pub fn create_max_pool_node(
 ///
 /// A Result containing a vector of usize representing the value associated with the key,
 /// or an Error if the key is not found.
-///
-/// # Examples
-///
-/// ```rust
-/// use std::collections::HashMap;
-/// use your_crate_name::get_value_from_attributes;
-///
-/// let mut attributes = HashMap::new();
-/// attributes.insert("key".to_string(), vec![1, 2, 3]);
-///
-/// let value = get_value_from_attributes("key", &attributes)?;
-/// assert_eq!(value, vec![1, 2, 3]);
-/// ```
 ///
 /// # Errors
 ///

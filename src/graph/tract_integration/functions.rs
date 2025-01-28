@@ -17,17 +17,6 @@ use tract_onnx::prelude::*;
 /// Returns an error if:
 /// - The number of dimensions exceeds 4.
 /// - The data cannot be shaped into the specified dimensions.
-///
-/// # Examples
-/// ```
-/// use your_crate::vec_to_tract_vec;
-/// use tract_onnx::prelude::*;
-///
-/// let dims = &[2, 2];
-/// let data = &[1.0, 2.0, 3.0, 4.0];
-/// let result = vec_to_tract_vec(dims, data);
-/// assert!(result.is_ok());
-/// ```
 pub fn vec_to_tract_vec<T: Debug + Datum + Copy>(
     dims: &[usize],
     data: &[T],
@@ -59,17 +48,6 @@ pub fn vec_to_tract_vec<T: Debug + Datum + Copy>(
 /// Returns an error if:
 /// - The number of dimensions exceeds 4.
 /// - The data cannot be shaped into the specified dimensions.
-///
-/// # Examples
-/// ```
-/// use your_crate::vec_to_tensor;
-/// use tract_onnx::prelude::*;
-///
-/// let dims = &[3, 3];
-/// let data = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
-/// let result = vec_to_tensor(dims, data);
-/// assert!(result.is_ok());
-/// ```
 pub fn vec_to_tensor<T: Debug + Datum + Copy>(dims: &[usize], data: &[T]) -> TractResult<Tensor> {
     if dims.len() > 4 {
         return Err(Error::msg(format!(
@@ -94,16 +72,6 @@ pub fn vec_to_tensor<T: Debug + Datum + Copy>(dims: &[usize], data: &[T]) -> Tra
 ///
 /// # Errors
 /// Returns an error if the tensor cannot be converted into a slice of the desired type.
-///
-/// # Examples
-/// ```
-/// use your_crate::tensor_to_vec;
-/// use tract_onnx::prelude::*;
-///
-/// let tensor = Tensor::from_shape(&[2, 2], &[1, 2, 3, 4]).unwrap();
-/// let result: Vec<i32> = tensor_to_vec(&tensor).unwrap();
-/// assert_eq!(result, vec![1, 2, 3, 4]);
-/// ```
 pub fn tensor_to_vec<T: Datum>(tensor: &Tensor) -> TractResult<Vec<T>> {
     Ok(tensor.as_slice::<T>()?.to_vec())
 }

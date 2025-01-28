@@ -2,6 +2,9 @@
 name = "mina-zkml"
 version = "0.1.0"
 edition = "2021"
+description = "zkML library using KIMCHI proof system in MINA"
+repository = "https://github.com/chris-chris/mina-zkml"
+documentation = "https://docs.rs/mina-zkml"
 
 [lib]
 name = "mina_zkml"

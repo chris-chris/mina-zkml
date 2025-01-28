@@ -48,11 +48,6 @@ pub struct ProverOutput {
 /// - `model`: The model used for generating the prover and verifier indices.
 /// - `domain_size`: The size of the evaluation domain.
 /// - `zk_rows`: The number of zero-knowledge rows.
-///
-/// # Examples
-/// ```
-/// let prover_system = ProverSystem::new(&model);
-/// ```
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ProverSystem {
     pub prover_index: ProverIndex<Vesta, ZkOpeningProof>,
@@ -67,11 +62,6 @@ pub struct ProverSystem {
 ///
 /// # Fields
 /// - `verifier_index`: The verifier index used for verifying proofs.
-///
-/// # Examples
-/// ```
-/// let verifier_system = VerifierSystem::new(verifier_index);
-/// ```
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VerifierSystem {
     pub verifier_index: VerifierIndex<Vesta, ZkOpeningProof>,
@@ -93,11 +83,6 @@ impl ProverSystem {
     ///
     /// # Panics
     /// This function will panic if the constraint system creation fails.
-    ///
-    /// # Examples
-    /// ```
-    /// let prover_system = ProverSystem::new(&model);
-    /// ```
     pub fn new(model: &Model) -> Self {
         // Convert model to circuit gates
         let mut builder = ModelCircuitBuilder::new();
@@ -186,11 +171,6 @@ impl ProverSystem {
     ///
     /// # Panics
     /// This function will panic if the value exceeds the maximum safe range.
-    ///
-    /// # Examples
-    /// ```
-    /// let field_value = ProverSystem::f32_to_field(1.23);
-    /// ```
     fn f32_to_field(value: f32) -> Fp {
         const SCALE: f32 = 1_000_000.0; // Increased precision
         const EPSILON: f32 = 1e-6; // Small number threshold
@@ -239,11 +219,6 @@ impl ProverSystem {
     ///
     /// # Panics
     /// This function will panic if the witness size exceeds the domain size minus the number of zero-knowledge rows.
-    ///
-    /// # Examples
-    /// ```
-    /// let witness_output = prover_system.create_witness(&inputs).expect("Failed to create witness");
-    /// ```
     fn create_witness(&self, inputs: &[Vec<f32>]) -> Result<WitnessOutput, String> {
         // First execute the model to get outputs
         let outputs = self
@@ -467,11 +442,6 @@ impl ProverSystem {
     ///
     /// # Errors
     /// This function returns an error if the proof creation fails.
-    ///
-    /// # Examples
-    /// ```
-    /// let prover_output = prover_system.prove(&inputs).expect("Failed to create proof");
-    /// ```
     pub fn prove(&self, inputs: &[Vec<f32>]) -> Result<ProverOutput, String> {
         // Create witness and get outputs
         let (witness, outputs) = self.create_witness(inputs)?;
@@ -508,11 +478,6 @@ impl ProverSystem {
     ///
     /// # Returns
     /// A new instance of `VerifierSystem`.
-    ///
-    /// # Examples
-    /// ```
-    /// let verifier_system = prover_system.verifier();
-    /// ```
     pub fn verifier(&self) -> VerifierSystem {
         VerifierSystem {
             verifier_index: self.verifier_index.clone(),
@@ -530,11 +495,6 @@ impl VerifierSystem {
     ///
     /// # Returns
     /// A new instance of `VerifierSystem`.
-    ///
-    /// # Examples
-    /// ```
-    /// let verifier_system = VerifierSystem::new(verifier_index);
-    /// ```
     pub fn new(verifier_index: VerifierIndex<Vesta, ZkOpeningProof>) -> Self {
         Self { verifier_index }
     }
@@ -552,11 +512,6 @@ impl VerifierSystem {
     ///
     /// # Panics
     /// This function will panic if the value exceeds the maximum safe range.
-    ///
-    /// # Examples
-    /// ```
-    /// let field_value = VerifierSystem::f32_to_field(1.23);
-    /// ```
     fn f32_to_field(value: f32) -> Fp {
         const SCALE: f32 = 1_000_000.0; // Match ProverSystem scale
         const EPSILON: f32 = 1e-6; // Small number threshold
@@ -603,12 +558,6 @@ impl VerifierSystem {
     ///
     /// # Errors
     /// This function returns an error if the proof verification fails.
-    ///
-    /// # Examples
-    /// ```
-    /// let result = verifier_system.verify(&proof, Some(&inputs), Some(&outputs)).expect("Failed to verify proof");
-    /// assert!(result, "Proof verification failed");
-    /// ```
     pub fn verify(
         &self,
         proof: &ProverProof<Vesta, ZkOpeningProof>,

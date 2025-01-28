@@ -48,15 +48,6 @@ impl CustomReducer {
     ///
     /// # Panics
     /// This method panics if the given `Reducer` is not found in the map.
-    ///
-    /// # Examples
-    /// ```
-    /// use your_crate::CustomReducer;
-    /// use tract_onnx::tract_core::ops::nn::Reducer;
-    ///
-    /// let index = CustomReducer::get_index_from_reducer(Reducer::Sum);
-    /// assert_eq!(index, 7);
-    /// ```
     pub fn get_index_from_reducer(reducer: Reducer) -> usize {
         Self::REDUCER_MAP
             .iter()
@@ -66,15 +57,6 @@ impl CustomReducer {
     }
 
     /// Gets the `Reducer` corresponding to a given index.
-    ///
-    /// # Examples
-    /// ```
-    /// use your_crate::CustomReducer;
-    /// use tract_onnx::tract_core::ops::nn::Reducer;
-    ///
-    /// let reducer = CustomReducer::get_reducer_from_index(4).unwrap();
-    /// assert_eq!(reducer, Reducer::Max);
-    /// ```
     pub fn get_reducer_from_index(index: usize) -> Option<Reducer> {
         Self::REDUCER_MAP
             .iter()
@@ -124,15 +106,6 @@ impl CustomDatumType {
     ///
     /// # Panics
     /// This method panics if the given `DatumType` is not found in the map.
-    ///
-    /// # Examples
-    /// ```
-    /// use your_crate::CustomDatumType;
-    /// use tract_onnx::prelude::DatumType;
-    ///
-    /// let index = CustomDatumType::get_index_from_datum_type(DatumType::I32);
-    /// assert_eq!(index, 7);
-    /// ```
     pub fn get_index_from_datum_type(datum: DatumType) -> usize {
         Self::DATUM_MAP
             .iter()
@@ -142,15 +115,6 @@ impl CustomDatumType {
     }
 
     /// Gets the `DatumType` corresponding to a given index.
-    ///
-    /// # Examples
-    /// ```
-    /// use your_crate::CustomDatumType;
-    /// use tract_onnx::prelude::DatumType;
-    ///
-    /// let datum = CustomDatumType::get_datum_type_from_index(10).unwrap();
-    /// assert_eq!(datum, DatumType::F32);
-    /// ```
     pub fn get_datum_type_from_index(index: usize) -> Option<DatumType> {
         Self::DATUM_MAP
             .iter()
@@ -193,15 +157,6 @@ impl CustomBinOp {
     ];
 
     /// Get the index of a binary operation by matching its name.
-    ///
-    /// # Examples
-    /// ```
-    /// use your_crate::CustomBinOp;
-    /// use tract_onnx::tract_core::ops::math::Add;
-    ///
-    /// let index = CustomBinOp::get_index_from_op(&Add).unwrap();
-    /// assert_eq!(index, 0);
-    /// ```
     pub fn get_index_from_op(op: &dyn BinMiniOp) -> Option<usize> {
         let op_name = op.name();
         Self::BIN_OP_MAP
@@ -211,15 +166,6 @@ impl CustomBinOp {
     }
 
     /// Get the `CustomBinOp` corresponding to an index.
-    ///
-    /// # Examples
-    /// ```
-    /// use your_crate::CustomBinOp;
-    /// use tract_onnx::tract_core::ops::binary::BinMiniOp;
-    ///
-    /// let op = CustomBinOp::get_op_from_index(&0).unwrap();
-    /// assert_eq!(op.name(), "Add");
-    /// ```
     pub fn get_op_from_index(index: &usize) -> Option<Box<dyn BinMiniOp>> {
         match index {
             0 => Some(Box::new(Add)),
@@ -301,16 +247,6 @@ impl CustomElementWiseOp {
     ];
 
     /// Get the index of an element-wise operation by matching its name.
-    ///
-    /// # Examples
-    /// ```
-    /// use your_crate::CustomElementWiseOp;
-    /// use tract_onnx::tract_core::internal::ElementWiseMiniOp;
-    ///
-    /// let op = tract_onnx::tract_core::ops::math::Ln {};
-    /// let index = CustomElementWiseOp::get_index_from_op(&op).unwrap();
-    /// assert_eq!(index, 2);
-    /// ```
     pub fn get_index_from_op(op: &dyn ElementWiseMiniOp) -> Option<usize> {
         let op_name = op.name();
         Self::ELEMENTWISE_OP_MAP
@@ -320,14 +256,6 @@ impl CustomElementWiseOp {
     }
 
     /// Get the `CustomElementWiseOp` corresponding to an index.
-    ///
-    /// # Examples
-    /// ```
-    /// use your_crate::CustomElementWiseOp;
-    ///
-    /// let op = CustomElementWiseOp::get_op_from_index(&3).unwrap();
-    /// assert_eq!(op.name(), "Square");
-    /// ```
     pub fn get_op_from_index(index: &usize) -> Option<Box<dyn ElementWiseMiniOp>> {
         Self::ELEMENTWISE_OP_MAP
             .iter()

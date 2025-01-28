@@ -6,19 +6,6 @@ use thiserror::Error;
 /// for different failure scenarios encountered during graph operations. This helps
 /// in debugging and handling errors gracefully in applications that utilize this module.
 ///
-/// # Examples
-///
-/// ```rust
-/// use crate::graph::errors::GraphError;
-///
-/// fn example_function() -> Result<(), GraphError> {
-///     // Simulate an error
-///     Err(GraphError::UnableToReadModel("File not found".to_string()))
-/// }
-/// ```
-///
-/// # Errors
-///
 /// This enum is used to represent errors that can occur during graph operations. Each variant
 /// provides a specific error message that can be used to understand the nature of the failure.
 ///
@@ -73,17 +60,6 @@ pub enum GraphError {
 /// # Returns
 ///
 /// A `GraphError` variant representing the `anyhow` error.
-///
-/// # Examples
-///
-/// ```rust
-/// use anyhow::Error;
-/// use crate::graph::errors::GraphError;
-///
-/// fn convert_error(err: Error) -> GraphError {
-///     GraphError::from(err)
-/// }
-/// ```
 impl From<anyhow::Error> for GraphError {
     fn from(err: anyhow::Error) -> Self {
         GraphError::TractParseFailure(err.to_string())

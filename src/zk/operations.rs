@@ -47,14 +47,6 @@ impl OnnxOperation {
     ///
     /// A `Result` containing a vector of `CircuitGate<Fp>` on success, or an error on failure.
     ///
-    /// # Examples
-    ///
-    /// ```
-    /// let op = OnnxOperation::MatMul { m: 2, n: 2, k: 2 };
-    /// let gates = op.to_circuit_gates(0).unwrap();
-    /// assert!(!gates.is_empty());
-    /// ```
-    ///
     /// # Errors
     ///
     /// This function will return an error if the conversion fails.
@@ -159,22 +151,6 @@ impl OnnxOperation {
 ///
 /// An `Option` containing the identified `OnnxOperation`, or `None` if the operation type
 /// is not recognized.
-///
-/// # Examples
-///
-/// ```
-/// let node = SerializableNode {
-///     op_type: OperationType::MatMul,
-///     inputs: vec![(0, 0), (1, 0)],
-///     out_dims: vec![2, 2],
-///     out_scale: 1,
-///     id: 0,
-///     op_params: None,
-///     attributes: HashMap::new(),
-/// };
-/// let op = identify_operation(&node);
-/// assert!(matches!(op, Some(OnnxOperation::MatMul { .. })));
-/// ```
 pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
     match node.op_type {
         OperationType::Input => None,
@@ -217,19 +193,6 @@ pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
 ///
 /// An `Option` containing the identified `OperationType`, or `None` if the operation type
 /// is not recognized.
-///
-/// # Examples
-///
-/// ```
-/// let node = TypedNode {
-///     op: Box::new(tract_onnx::ops::math::MatMul::default()),
-///     id: 0,
-///     inputs: vec![],
-///     outputs: vec![],
-/// };
-/// let op_type = identify_tract_operation(&node);
-/// assert!(matches!(op_type, Some(OperationType::MatMul)));
-/// ```
 pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
     // Check operation type based on the node's operation name
     let op_name = node.op.name();

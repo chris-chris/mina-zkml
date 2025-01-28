@@ -117,7 +117,7 @@ pub enum CustomBinOp {
 
 impl CustomBinOp {
     /// Map between names, indices, and `CustomBinOp` variants.
-    pub const BIN_OP_MAP: &'static [(&'static str, &dyn BinMiniOp, usize)] = &[
+    pub const BIN_OP_MAP: &'static [(&'static str, &'static (dyn BinMiniOp + 'static), usize)] = &[
         ("Add", &Add, 0),
         ("Sub", &Sub, 1),
         ("Mul", &Mul, 2),

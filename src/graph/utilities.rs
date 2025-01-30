@@ -6,7 +6,28 @@ use tract_onnx::prelude::{Node as OnnxNode, SymbolValues, TypedFact, TypedOp};
 use tract_onnx::tract_core::ops::cnn::PoolSpec;
 use tract_onnx::tract_core::ops::cnn::{KernelFormat, PaddingSpec};
 
-// TODO: refactor duplicate functions
+/// Handles the PoolSpec attributes and inserts them into the provided attributes HashMap.
+///
+/// This function processes the kernel shape, strides, dilations, padding, and kernel format
+/// from the given PoolSpec and inserts them into the attributes HashMap.
+///
+/// # Arguments
+///
+/// * `attributes` - A mutable reference to a HashMap where the attributes will be inserted.
+/// * `pool_spec` - A reference to the PoolSpec containing the pooling specifications.
+/// * `kernel_fmt` - An optional reference to the KernelFormat.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn handle_pool_spec(
     attributes: &mut HashMap<String, Vec<usize>>,
     pool_spec: &PoolSpec,
@@ -69,6 +90,28 @@ pub fn handle_pool_spec(
     );
 }
 
+/// Retrieves the output shapes of a given ONNX node.
+///
+/// This function evaluates the shapes of the outputs of the provided ONNX node
+/// using the given symbol values and returns them as a vector of vectors of usize.
+///
+/// # Arguments
+///
+/// * `node` - A reference to the ONNX node.
+/// * `symbol_values` - A reference to the symbol values used for evaluation.
+///
+/// # Returns
+///
+/// A Result containing a vector of vectors of usize representing the output shapes,
+/// or a GraphError if the evaluation fails.
+///
+/// # Errors
+///
+/// Returns a GraphError if the shape evaluation fails.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn node_output_shapes(
     node: &OnnxNode<TypedFact, Box<dyn TypedOp>>,
     symbol_values: &SymbolValues,
@@ -86,272 +129,490 @@ pub fn node_output_shapes(
     Ok(shapes)
 }
 
-// Utility function to create an Input node
+/// Creates a new node with the given parameters.
+///
+/// This function creates a new node with the specified id, inputs, output dimensions,
+/// operation type, attributes, and operation parameters.
+///
+/// # Arguments
+///
+/// * `id` - The unique identifier for the node.
+/// * `inputs` - A vector of tuples representing the input connections.
+/// * `out_dims` - A vector of usize representing the output dimensions.
+/// * `op_type` - The type of operation for the node.
+/// * `attributes` - An optional HashMap of attributes for the node.
+/// * `op_params` - An optional vector of operation parameters.
+///
+/// # Returns
+///
+/// A NodeType representing the created node.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
+pub fn create_node(
+    id: usize,
+    inputs: Vec<(usize, usize)>,
+    out_dims: Vec<usize>,
+    op_type: OperationType,
+    attributes: Option<HashMap<String, Vec<i32>>>,
+    op_params: Option<Vec<f32>>,
+) -> NodeType {
+    NodeType::Node(SerializableNode {
+        inputs,
+        out_dims,
+        out_scale: 1,
+        id,
+        op_type,
+        op_params,
+        attributes: attributes
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(key, value)| {
+                // Map each value to usize explicitly
+                (
+                    key,
+                    value
+                        .into_iter()
+                        .map(|v| v as usize)
+                        .collect::<Vec<usize>>(),
+                )
+            })
+            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
+    })
+}
+
+/// Creates an Input node with the given id and shape.
+///
+/// This function creates a new Input node with the specified id and shape.
+///
+/// # Arguments
+///
+/// * `id` - The unique identifier for the node.
+/// * `shape` - A vector of usize representing the shape of the input.
+///
+/// # Returns
+///
+/// A NodeType representing the created Input node.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn create_input_node(id: usize, shape: Vec<usize>) -> NodeType {
-    NodeType::Node(SerializableNode {
-        inputs: vec![],
-        out_dims: shape,
-        out_scale: 1,
-        id,
-        op_type: OperationType::Input,
-        op_params: None,
-        attributes: HashMap::new(),
-    })
+    create_node(id, vec![], shape, OperationType::Input, None, None)
 }
 
-// Utility function to create a Const node (weight or bias)
+/// Creates a Const node with the given id, shape, and values.
+///
+/// This function creates a new Const node with the specified id, shape, and values.
+///
+/// # Arguments
+///
+/// * `id` - The unique identifier for the node.
+/// * `shape` - A vector of usize representing the shape of the constant.
+/// * `values` - A vector of f32 representing the values of the constant.
+///
+/// # Returns
+///
+/// A NodeType representing the created Const node.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn create_const_node(id: usize, shape: Vec<usize>, values: Vec<f32>) -> NodeType {
-    NodeType::Node(SerializableNode {
-        inputs: vec![],
-        out_dims: shape,
-        out_scale: 1,
-        id,
-        op_type: OperationType::Const,
-        op_params: Some(values),
-        attributes: HashMap::new(),
-    })
+    create_node(id, vec![], shape, OperationType::Const, None, Some(values))
 }
 
-// Utility function to create a Conv node
+/// Creates a Conv node with the given parameters.
+///
+/// This function creates a new Conv node with the specified id, inputs, output dimensions,
+/// and attributes.
+///
+/// # Arguments
+///
+/// * `id` - The unique identifier for the node.
+/// * `inputs` - A vector of tuples representing the input connections.
+/// * `out_dims` - A vector of usize representing the output dimensions.
+/// * `attributes` - A HashMap of attributes for the node.
+///
+/// # Returns
+///
+/// A NodeType representing the created Conv node.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn create_conv_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
     out_dims: Vec<usize>,
     attributes: HashMap<String, Vec<i32>>,
 ) -> NodeType {
-    NodeType::Node(SerializableNode {
+    create_node(
+        id,
         inputs,
         out_dims,
-        out_scale: 1,
-        id,
-        op_type: OperationType::Conv,
-        op_params: None,
-        attributes: attributes
-            .into_iter()
-            .map(|(key, value)| {
-                // Map each value to usize explicitly
-                (
-                    key,
-                    value
-                        .into_iter()
-                        .map(|v| v as usize)
-                        .collect::<Vec<usize>>(),
-                )
-            })
-            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
-    })
+        OperationType::Conv,
+        Some(attributes),
+        None,
+    )
 }
 
-// Utility function to create a AddAxis node
+/// Creates an AddAxis node with the given parameters.
+///
+/// This function creates a new AddAxis node with the specified id, inputs, output dimensions,
+/// and attributes.
+///
+/// # Arguments
+///
+/// * `id` - The unique identifier for the node.
+/// * `inputs` - A vector of tuples representing the input connections.
+/// * `out_dims` - A vector of usize representing the output dimensions.
+/// * `attributes` - A HashMap of attributes for the node.
+///
+/// # Returns
+///
+/// A NodeType representing the created AddAxis node.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn create_add_axis_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
     out_dims: Vec<usize>,
     attributes: HashMap<String, Vec<i32>>,
 ) -> NodeType {
-    NodeType::Node(SerializableNode {
+    create_node(
+        id,
         inputs,
         out_dims,
-        out_scale: 1,
-        id,
-        op_type: OperationType::AddAxis,
-        op_params: None,
-        attributes: attributes
-            .into_iter()
-            .map(|(key, value)| {
-                // Map each value to usize explicitly
-                (
-                    key,
-                    value
-                        .into_iter()
-                        .map(|v| v as usize)
-                        .collect::<Vec<usize>>(),
-                )
-            })
-            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
-    })
+        OperationType::AddAxis,
+        Some(attributes),
+        None,
+    )
 }
 
-// Utility function to create a Softmax node
+/// Creates a Softmax node with the given parameters.
+///
+/// This function creates a new Softmax node with the specified id, inputs, output dimensions,
+/// and attributes.
+///
+/// # Arguments
+///
+/// * `id` - The unique identifier for the node.
+/// * `inputs` - A vector of tuples representing the input connections.
+/// * `out_dims` - A vector of usize representing the output dimensions.
+/// * `attributes` - A HashMap of attributes for the node.
+///
+/// # Returns
+///
+/// A NodeType representing the created Softmax node.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn create_softmax_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
     out_dims: Vec<usize>,
     attributes: HashMap<String, Vec<i32>>,
 ) -> NodeType {
-    NodeType::Node(SerializableNode {
+    create_node(
+        id,
         inputs,
         out_dims,
-        out_scale: 1,
-        id,
-        op_type: OperationType::Softmax,
-        op_params: None,
-        attributes: attributes
-            .into_iter()
-            .map(|(key, value)| {
-                // Map each value to usize explicitly
-                (
-                    key,
-                    value
-                        .into_iter()
-                        .map(|v| v as usize)
-                        .collect::<Vec<usize>>(),
-                )
-            })
-            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
-    })
+        OperationType::Softmax,
+        Some(attributes),
+        None,
+    )
 }
 
-// Utility function to create a Gather node
+/// Creates a Gather node with the given parameters.
+///
+/// This function creates a new Gather node with the specified id, inputs, output dimensions,
+/// and attributes.
+///
+/// # Arguments
+///
+/// * `id` - The unique identifier for the node.
+/// * `inputs` - A vector of tuples representing the input connections.
+/// * `out_dims` - A vector of usize representing the output dimensions.
+/// * `attributes` - A HashMap of attributes for the node.
+///
+/// # Returns
+///
+/// A NodeType representing the created Gather node.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn create_gather_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
     out_dims: Vec<usize>,
     attributes: HashMap<String, Vec<i32>>,
 ) -> NodeType {
-    NodeType::Node(SerializableNode {
+    create_node(
+        id,
         inputs,
         out_dims,
-        out_scale: 1,
-        id,
-        op_type: OperationType::Gather,
-        op_params: None,
-        attributes: attributes
-            .into_iter()
-            .map(|(key, value)| {
-                // Map each value to usize explicitly
-                (
-                    key,
-                    value
-                        .into_iter()
-                        .map(|v| v as usize)
-                        .collect::<Vec<usize>>(),
-                )
-            })
-            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
-    })
+        OperationType::Gather,
+        Some(attributes),
+        None,
+    )
 }
 
-// Utility function to create a Reduce node
+/// Creates a Reduce node with the given parameters.
+///
+/// This function creates a new Reduce node with the specified id, inputs, output dimensions,
+/// and attributes.
+///
+/// # Arguments
+///
+/// * `id` - The unique identifier for the node.
+/// * `inputs` - A vector of tuples representing the input connections.
+/// * `out_dims` - A vector of usize representing the output dimensions.
+/// * `attributes` - A HashMap of attributes for the node.
+///
+/// # Returns
+///
+/// A NodeType representing the created Reduce node.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn create_reduce_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
     out_dims: Vec<usize>,
     attributes: HashMap<String, Vec<i32>>,
 ) -> NodeType {
-    NodeType::Node(SerializableNode {
+    create_node(
+        id,
         inputs,
         out_dims,
-        out_scale: 1,
-        id,
-        op_type: OperationType::Reduce,
-        op_params: None,
-        attributes: attributes
-            .into_iter()
-            .map(|(key, value)| {
-                // Map each value to usize explicitly
-                (
-                    key,
-                    value
-                        .into_iter()
-                        .map(|v| v as usize)
-                        .collect::<Vec<usize>>(),
-                )
-            })
-            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
-    })
+        OperationType::Reduce,
+        Some(attributes),
+        None,
+    )
 }
 
-// Utility function to create a TypeBinOp node
+/// Creates a TypedBinOp node with the given parameters.
+///
+/// This function creates a new TypedBinOp node with the specified id, inputs, output dimensions,
+/// and attributes.
+///
+/// # Arguments
+///
+/// * `id` - The unique identifier for the node.
+/// * `inputs` - A vector of tuples representing the input connections.
+/// * `out_dims` - A vector of usize representing the output dimensions.
+/// * `attributes` - A HashMap of attributes for the node.
+///
+/// # Returns
+///
+/// A NodeType representing the created TypedBinOp node.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn create_typedbin_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
     out_dims: Vec<usize>,
     attributes: HashMap<String, Vec<i32>>,
 ) -> NodeType {
-    NodeType::Node(SerializableNode {
+    create_node(
+        id,
         inputs,
         out_dims,
-        out_scale: 1,
-        id,
-        op_type: OperationType::TypedBinOp,
-        op_params: None,
-        attributes: attributes
-            .into_iter()
-            .map(|(key, value)| {
-                // Map each value to usize explicitly
-                (
-                    key,
-                    value
-                        .into_iter()
-                        .map(|v| v as usize)
-                        .collect::<Vec<usize>>(),
-                )
-            })
-            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
-    })
+        OperationType::TypedBinOp,
+        Some(attributes),
+        None,
+    )
 }
 
-// Utility function to create a ElementWiseOp node
+/// Creates an ElementWiseOp node with the given parameters.
+///
+/// This function creates a new ElementWiseOp node with the specified id, inputs, output dimensions,
+/// and attributes.
+///
+/// # Arguments
+///
+/// * `id` - The unique identifier for the node.
+/// * `inputs` - A vector of tuples representing the input connections.
+/// * `out_dims` - A vector of usize representing the output dimensions.
+/// * `attributes` - A HashMap of attributes for the node.
+///
+/// # Returns
+///
+/// A NodeType representing the created ElementWiseOp node.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn create_elementwise_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
     out_dims: Vec<usize>,
     attributes: HashMap<String, Vec<i32>>,
 ) -> NodeType {
-    NodeType::Node(SerializableNode {
+    create_node(
+        id,
         inputs,
         out_dims,
-        out_scale: 1,
-        id,
-        op_type: OperationType::ElementWiseOp,
-        op_params: None,
-        attributes: attributes
-            .into_iter()
-            .map(|(key, value)| {
-                // Map each value to usize explicitly
-                (
-                    key,
-                    value
-                        .into_iter()
-                        .map(|v| v as usize)
-                        .collect::<Vec<usize>>(),
-                )
-            })
-            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
-    })
+        OperationType::ElementWiseOp,
+        Some(attributes),
+        None,
+    )
 }
 
-// Utility function to create a MaxPool node
+/// Creates a MaxPool node with the given parameters.
+///
+/// This function creates a new MaxPool node with the specified id, inputs, output dimensions,
+/// and attributes.
+///
+/// # Arguments
+///
+/// * `id` - The unique identifier for the node.
+/// * `inputs` - A vector of tuples representing the input connections.
+/// * `out_dims` - A vector of usize representing the output dimensions.
+/// * `attributes` - A HashMap of attributes for the node.
+///
+/// # Returns
+///
+/// A NodeType representing the created MaxPool node.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Errors
+///
+/// This function does not return errors.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn create_max_pool_node(
     id: usize,
     inputs: Vec<(usize, usize)>,
     out_dims: Vec<usize>,
     attributes: HashMap<String, Vec<i32>>,
 ) -> NodeType {
-    NodeType::Node(SerializableNode {
+    create_node(
+        id,
         inputs,
         out_dims,
-        out_scale: 1,
-        id,
-        op_type: OperationType::MaxPool,
-        op_params: None,
-        attributes: attributes
-            .into_iter()
-            .map(|(key, value)| {
-                // Map each value to usize explicitly
-                (
-                    key,
-                    value
-                        .into_iter()
-                        .map(|v| v as usize)
-                        .collect::<Vec<usize>>(),
-                )
-            })
-            .collect::<HashMap<String, Vec<usize>>>(), // Collect into HashMap<String, Vec<usize>>
-    })
+        OperationType::MaxPool,
+        Some(attributes),
+        None,
+    )
 }
 
+/// Retrieves a value from the attributes HashMap.
+///
+/// This function retrieves the value associated with the given key from the attributes HashMap
+/// and returns it as a vector of usize.
+///
+/// # Arguments
+///
+/// * `key` - A string slice representing the key to look up in the attributes HashMap.
+/// * `attributes` - A reference to the attributes HashMap.
+///
+/// # Returns
+///
+/// A Result containing a vector of usize representing the value associated with the key,
+/// or an Error if the key is not found.
+///
+/// # Errors
+///
+/// Returns a GraphError if the key is not found in the attributes HashMap.
+///
+/// # Safety
+///
+/// This function is safe to use.
 pub fn get_value_from_attributes(
     key: &str,
     attributes: &HashMap<String, Vec<usize>>,

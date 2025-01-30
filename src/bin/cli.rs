@@ -1,3 +1,37 @@
+//! This module provides a command-line interface (CLI) for interacting with ONNX models and
+//! generating/verifying zero-knowledge proofs using the `mina_zkml` library.
+//!
+//! The CLI supports various commands such as creating a table from ONNX model operators,
+//! converting an ONNX model to a graph JSON, generating proofs from models, verifying proofs,
+//! and displaying proof details.
+//!
+//! # Commands
+//!
+//! - `Table`: Create a table from ONNX model operators.
+//! - `Convert`: Convert an ONNX model to graph JSON.
+//! - `Proof`: Generate proof from model.
+//! - `Verify`: Verify a proof.
+//! - `ShowProof`: Display proof details.
+//!
+//! # Examples
+//!
+//! ```sh
+//! # Create a table from ONNX model operators
+//! cargo run -- Table --model path/to/model.onnx
+//!
+//! # Convert ONNX model to graph JSON
+//! cargo run -- Convert --model path/to/model.onnx --output path/to/output.json
+//!
+//! # Generate proof from model
+//! cargo run -- Proof --model path/to/model.onnx --input path/to/input.json --output path/to/proof.json --input_visibility private --output_visibility private
+//!
+//! # Verify a proof
+//! cargo run -- Verify --proof path/to/proof.json --model path/to/model.onnx --input path/to/input.json --output path/to/output.json --input_visibility private --output_visibility private
+//!
+//! # Display proof details
+//! cargo run -- ShowProof --proof path/to/proof.json
+//! ```
+
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 use mina_zkml::{
@@ -10,6 +44,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+/// Command-line interface for interacting with ONNX models and generating/verifying zero-knowledge proofs.
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -17,6 +52,7 @@ struct Cli {
     command: Commands,
 }
 
+/// Enum representing the available commands for the CLI.
 #[derive(Subcommand)]
 enum Commands {
     /// Create a table from ONNX model operators
@@ -81,6 +117,19 @@ enum Commands {
     },
 }
 
+/// Parse visibility string to `Visibility` enum.
+///
+/// # Arguments
+///
+/// * `s` - A string slice representing the visibility ("public" or "private").
+///
+/// # Returns
+///
+/// A `Result` containing the parsed `Visibility` enum or an error if the input is invalid.
+///
+/// # Errors
+///
+/// This function returns an error if the input string is not "public" or "private".
 fn parse_visibility(s: &str) -> Result<Visibility> {
     match s.to_lowercase().as_str() {
         "public" => Ok(Visibility::Public),
@@ -92,17 +141,54 @@ fn parse_visibility(s: &str) -> Result<Visibility> {
     }
 }
 
-// Custom serialization for ProverOutput
+/// Custom serialization for `ProverOutput`.
+///
+/// # Arguments
+///
+/// * `output` - A reference to the `ProverOutput` to be serialized.
+///
+/// # Returns
+///
+/// A `Result` containing the serialized bytes or an error if serialization fails.
+///
+/// # Errors
+///
+/// This function returns an error if the serialization process fails.
 fn serialize_prover_output(output: &ProverOutput) -> Result<Vec<u8>> {
     bincode::serialize(output).with_context(|| "Failed to serialize prover output")
 }
 
-// Custom deserialization for ProverOutput
+/// Custom deserialization for `ProverOutput`.
+///
+/// # Arguments
+///
+/// * `bytes` - A byte slice containing the serialized `ProverOutput`.
+///
+/// # Returns
+///
+/// A `Result` containing the deserialized `ProverOutput` or an error if deserialization fails.
+///
+/// # Errors
+///
+/// This function returns an error if the deserialization process fails.
 fn deserialize_prover_output(bytes: &[u8]) -> Result<ProverOutput> {
     bincode::deserialize(bytes).with_context(|| "Failed to deserialize prover output")
 }
 
-// Validate input JSON format
+/// Validate input JSON format and convert it to a vector of vectors of `f32`.
+///
+/// # Arguments
+///
+/// * `input_data` - A reference to a `Value` representing the input JSON data.
+///
+/// # Returns
+///
+/// A `Result` containing the validated and converted input data or an error if validation fails.
+///
+/// # Errors
+///
+/// This function returns an error if the input JSON is not an array of arrays or if any element
+/// is not a number.
 fn validate_input_json(input_data: &Value) -> Result<Vec<Vec<f32>>> {
     if !input_data.is_array() {
         return Err(anyhow!("Input JSON must be an array of arrays"));
@@ -137,6 +223,17 @@ fn validate_input_json(input_data: &Value) -> Result<Vec<Vec<f32>>> {
     Ok(result)
 }
 
+/// Main function for the CLI.
+///
+/// Parses the command-line arguments and executes the corresponding command.
+///
+/// # Returns
+///
+/// A `Result` indicating the success or failure of the command execution.
+///
+/// # Errors
+///
+/// This function returns an error if any of the command executions fail.
 #[allow(deprecated)]
 fn main() -> Result<()> {
     let cli = Cli::parse();

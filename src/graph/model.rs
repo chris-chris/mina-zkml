@@ -1,3 +1,8 @@
+//! This module defines the core structures and functions for representing and manipulating
+//! neural network graphs. It includes the main `Model` structure, which contains the parsed
+//! graph and variable visibility settings, as well as various enums and structs for representing
+//! nodes, operations, and connections within the graph.
+
 use super::errors::GraphError;
 use super::utilities::handle_pool_spec;
 use crate::graph::tract_integration::*;
@@ -33,6 +38,7 @@ pub type GraphLoadResult = (Graph<TypedFact, Box<dyn TypedOp>>, SymbolValues);
 /// Represents a node output connection as (node_index, output_slot)
 pub type Outlet = (usize, usize);
 
+/// Enum representing different types of operations that can be performed in the graph.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum OperationType {
     Input,
@@ -121,6 +127,11 @@ impl ParsedNodes {
         self.inputs.len()
     }
 
+    /// Logs the parameters and biases of operations in the graph to a file.
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError::UnableToSaveModel` if the log file cannot be created or written to.
     pub fn log_op_params_and_biases(&self) -> Result<(), GraphError> {
         let mut file = OpenOptions::new()
             .create(true)
@@ -238,6 +249,10 @@ impl ParsedNodes {
     }
 
     /// Returns a vector of output scales for all output nodes
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError::MissingNode` if an output node is not found in the graph.
     pub fn get_output_scales(&self) -> Result<Vec<i32>, GraphError> {
         self.outputs
             .iter()
@@ -254,6 +269,11 @@ impl ParsedNodes {
     }
 
     /// Execute the graph with given inputs
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError` if there is an issue with the execution, such as missing nodes,
+    /// invalid input slots, or unsupported operations.
     pub fn execute(&self, inputs: &[Vec<f32>]) -> Result<Vec<Vec<f32>>, GraphError> {
         let mut node_outputs: HashMap<usize, Vec<Vec<f32>>> = HashMap::new();
 
@@ -336,6 +356,11 @@ impl ParsedNodes {
     }
 
     /// Execute a single operation
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError` if there is an issue with the execution, such as invalid input lengths,
+    /// missing nodes, or unsupported operations.
     fn execute_operation(
         &self,
         node: &SerializableNode,
@@ -353,36 +378,6 @@ impl ParsedNodes {
                 let res: Vec<f32> = inputs[0].to_vec();
 
                 Ok(vec![res])
-
-                // TODO: Should fix the return type of execute_operation from f32 to generic
-
-                // // parse input_dims
-                // let input_node = self
-                //     .nodes
-                //     .get(&node.inputs[0].0)
-                //     .ok_or(GraphError::NodeNotFound)?;
-                // let input_dims: Vec<usize> = match input_node {
-                //     NodeType::Node(input) => input.out_dims.clone(),
-                //     _ => return Err(GraphError::InvalidNodeType),
-                // };
-
-                // // get tensor_input
-                // let inputs_f64: Vec<f64> = inputs[0].iter().map(|&x| x as f64).collect();
-                // let tensor_input: Tensor = vec_to_tensor(&input_dims, &inputs_f64)?;
-
-                // // get DatumType attributes
-                // let datum_type = {
-                //     let datum_type_idx: usize = *get_value_from_attributes("to", &node.attributes)?
-                //         .first()
-                //         .unwrap_or(&0);
-
-                //     CustomDatumType::get_datum_type_from_index(datum_type_idx)
-                //         .ok_or_else(|| TractError::msg("Cast: failed to parse datum type"))?
-                // };
-
-                // return res from eval
-                // let casting = tensor_input.cast_to_dt(datum_type)?;
-                // let res: Vec<f32> = insputs.iter().map(|&x| x as f32).collect();
             }
             OperationType::TypedBinOp => {
                 if inputs.len() != 2 {
@@ -1025,17 +1020,14 @@ impl ParsedNodes {
             }
         };
 
-        // Log the tensor values after each operation
-        // if let Ok(outputs) = &result {
-        //     if let Err(e) = self.log_tensor_values(node.id, &node.op_type, outputs) {
-        //         println!("Warning: Failed to log tensor values: {:?}", e);
-        //     }
-        // }
-
         result
     }
 
     /// Perform topological sort of nodes
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError::CyclicDependency` if a cyclic dependency is detected in the graph.
     fn topological_sort(&self) -> Result<Vec<usize>, GraphError> {
         let mut visited = HashMap::new();
         let mut sorted = Vec::new();
@@ -1286,6 +1278,17 @@ pub enum Visibility {
 }
 
 impl Model {
+    /// Creates a new `Model` by loading an ONNX model from the specified path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the ONNX model file.
+    /// * `run_args` - The arguments for running the model.
+    /// * `visibility` - The visibility settings for variables in the model.
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError` if there is an issue loading the ONNX model.
     pub fn new(
         path: &str,
         run_args: &RunArgs,
@@ -1298,6 +1301,17 @@ impl Model {
         })
     }
 
+    /// Loads an ONNX model and converts it into the internal `ParsedNodes` representation.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the ONNX model file.
+    /// * `run_args` - The arguments for running the model.
+    /// * `visibility` - The visibility settings for variables in the model.
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError` if there is an issue loading or parsing the ONNX model.
     pub fn load_onnx_model(
         path: &str,
         run_args: &RunArgs,
@@ -1331,6 +1345,16 @@ impl Model {
         Ok(parsed_nodes)
     }
 
+    /// Loads an ONNX model using the `tract` library.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the ONNX model file.
+    /// * `run_args` - The arguments for running the model.
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError` if there is an issue loading or parsing the ONNX model.
     pub fn load_onnx_using_tract<P: AsRef<Path>>(
         path: P,
         run_args: &RunArgs,
@@ -1411,6 +1435,14 @@ impl Model {
     }
 
     /// Saves the model to a binary file
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the file where the model will be saved.
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError::UnableToSaveModel` if the model cannot be serialized or written to the file.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), GraphError> {
         let encoded: Vec<u8> =
             bincode::serialize(self).map_err(|_| GraphError::UnableToSaveModel)?;
@@ -1418,6 +1450,14 @@ impl Model {
     }
 
     /// Loads a model from a binary file
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the binary file containing the model.
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError::UnableToReadModel` if the model cannot be read or deserialized from the file.
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, GraphError> {
         let bytes = std::fs::read(path).map_err(|err| {
             GraphError::UnableToReadModel(format!(
@@ -1430,6 +1470,16 @@ impl Model {
     }
 
     /// Converts a tract graph into the internal node representation
+    ///
+    /// # Arguments
+    ///
+    /// * `graph` - The tract graph to be converted.
+    /// * `visibility` - The visibility settings for variables in the model.
+    /// * `symbol_values` - The symbol values for the graph.
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphError` if there is an issue converting the graph.
     pub fn nodes_from_graph(
         graph: &Graph<TypedFact, Box<dyn TypedOp>>,
         visibility: VarVisibility,

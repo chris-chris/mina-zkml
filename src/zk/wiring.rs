@@ -8,15 +8,25 @@ use mina_curves::pasta::Fp;
 
 use crate::graph::model::{Model, NodeType, OperationType};
 
-// Constants from o1js/proof-systems
-pub const COLUMNS: usize = 15; // Total number of columns
-pub const PERMUTS: usize = 7; // Number of permutable columns
+/// Number of coefficients columns in the circuit
+pub const COLUMNS: usize = 15;
+
+/// Number of permutable columns in the circuit
+pub const PERMUTS: usize = 7;
+
+/// Wire indices for all columns
 pub const WIRES: [usize; COLUMNS] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
-// Minimum domain size from o1js/proof-systems
+/// Minimum domain size required for the circuit
 pub const MIN_DOMAIN_SIZE: usize = 4096;
 
+/// Builder for creating arithmetic circuits from computational models
+///
+/// The `ModelCircuitBuilder` constructs a circuit representation of a computational
+/// model by translating each operation into corresponding circuit gates. It handles
+/// the layout of gates, padding, and zero-knowledge rows required for the proof system.
 pub struct ModelCircuitBuilder {
+    /// Current row index in the circuit being built
     current_row: usize,
 }
 
@@ -27,16 +37,29 @@ impl Default for ModelCircuitBuilder {
 }
 
 impl ModelCircuitBuilder {
+    /// Creates a new `ModelCircuitBuilder` instance
     pub fn new() -> Self {
         Self { current_row: 0 }
     }
 
-    /// Calculate the strict lower bound for zk_rows
+    /// Calculates the strict lower bound for the number of zero-knowledge rows
+    ///
+    /// # Arguments
+    /// * `num_chunks` - Number of chunks the domain is divided into
+    ///
+    /// # Returns
+    /// The minimum number of zero-knowledge rows required
     fn zk_rows_strict_lower_bound(num_chunks: usize) -> usize {
         (2 * (PERMUTS + 1) * num_chunks - 2) / PERMUTS
     }
 
-    /// Calculate next power of two
+    /// Calculates the next power of two greater than or equal to `n`
+    ///
+    /// # Arguments
+    /// * `n` - The input number
+    ///
+    /// # Returns
+    /// The smallest power of two >= `n`
     fn next_power_of_two(n: usize) -> usize {
         if n.is_power_of_two() {
             n
@@ -57,7 +80,13 @@ impl ModelCircuitBuilder {
         }
     }
 
-    /// Create wires for a row
+    /// Creates wire connections for a given row
+    ///
+    /// # Arguments
+    /// * `row` - The row index to create wires for
+    ///
+    /// # Returns
+    /// Array of `Wire` structs for the specified row
     fn create_wires(row: usize) -> [Wire; PERMUTS] {
         [
             Wire { row, col: 0 }, // Current row, main wire
@@ -70,7 +99,13 @@ impl ModelCircuitBuilder {
         ]
     }
 
-    /// Calculate domain size and zk_rows for a given circuit size
+    /// Calculates the domain size and number of zero-knowledge rows
+    ///
+    /// # Arguments
+    /// * `circuit_size` - The size of the circuit being built
+    ///
+    /// # Returns
+    /// A tuple containing (domain_size, zk_rows)
     fn calculate_domain_params(circuit_size: usize) -> (usize, usize) {
         let lookup_domain_size = 0; // We don't use lookup tables yet
         let circuit_lower_bound = std::cmp::max(circuit_size, lookup_domain_size + 1);
@@ -109,6 +144,16 @@ impl ModelCircuitBuilder {
         (domain_size, zk_rows)
     }
 
+    /// Builds a circuit from a computational model
+    ///
+    /// # Arguments
+    /// * `model` - The computational model to translate into a circuit
+    ///
+    /// # Returns
+    /// A tuple containing:
+    /// - Vector of circuit gates
+    /// - Domain size
+    /// - Number of zero-knowledge rows
     pub fn build_circuit(&mut self, model: &Model) -> (Vec<CircuitGate<Fp>>, usize, usize) {
         let mut gates = Vec::new();
         // Calculate total number of public inputs

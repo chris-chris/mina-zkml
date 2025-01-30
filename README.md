@@ -1,4 +1,4 @@
-# mina-zkml (Working Title)
+# mina-zkml
 
 **mina-zkml** is an open-source library designed to integrate AI technologies seamlessly with the MINA blockchain. By leveraging zero-knowledge machine learning (zkML), this library empowers developers to build and deploy AI models securely and efficiently on the MINA blockchain.
 
@@ -11,8 +11,17 @@
 
 ## 🛠️ Installation
 
-To get started with **mina-zkml**, ensure you have [Rust](https://www.rust-lang.org/tools/install) installed on your system.
+### Prerequisites
+Ensure you have [Rust](https://www.rust-lang.org/tools/install) installed on your system.
 
+### CLI Installation (Linux)
+```bash
+curl -L -o mina-zkml-cli https://github.com/chris-chris/mina-zkml/releases/latest/download/mina-zkml-cli
+chmod +x mina-zkml-cli
+./mina-zkml-cli --help
+```
+
+### From Source
 ```bash
 # Clone the repository
 git clone https://github.com/chris-chris/mina-zkml.git
@@ -23,29 +32,36 @@ cd mina-zkml
 # Build the project
 cargo build --release
 
+# Run the CLI
 ./target/release/mina-zkml-cli --help
 ```
 
 ## 📚 Usage
 
-Running Examples
-
+### Running Examples
 mina-zkml comes with example projects to demonstrate its capabilities. Below are two primary examples:
 
-### Perceptron ZKML Model Prediction
-
+#### Perceptron ZKML Model Prediction
 Execute the perceptron model prediction using the following command:
-
 ```bash
 cargo run --example perceptron
 ```
 
-### MNIST Lenet ZKML Model End 2 End Example
-
-Execute the MNIST model end-2-end example through notebook.
-
+#### MNIST Lenet ZKML Model End-to-End Example
+Run the MNIST model end-to-end example through the provided notebook:
 `./examples/notebook/lenet.ipynb`
 
-### Creating a Verifier Script & Deploy it to the MINA devnet
+### Creating a Verifier Script & Deploying to MINA Devnet
+For detailed instructions, visit the [mina-zkml-verifier repository](https://github.com/chris-chris/mina-zkml-verifier).
 
-https://github.com/chris-chris/mina-zkml-verifier
+## 🤝 Contributing
+We welcome contributions from the community! If you're interested in contributing, please follow these steps:
+
+1. Check out the [open issues](https://github.com/chris-chris/mina-zkml/issues) for ideas on where to contribute.
+2. Fork the repository and create a new branch for your feature or bugfix.
+3. Submit a pull request with a clear description of your changes.
+
+If you have any questions, feel free to reach out to the maintainers:
+- [Chris](https://github.com/chris-chris)
+- [sshivaditya](https://github.com/sshivaditya)
+- [Hugo](https://github.com/energyGiver)

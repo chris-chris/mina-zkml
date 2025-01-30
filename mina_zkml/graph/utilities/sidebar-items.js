@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["create_add_axis_node","create_const_node","create_conv_node","create_elementwise_node","create_gather_node","create_input_node","create_max_pool_node","create_node","create_reduce_node","create_softmax_node","create_typedbin_node","get_value_from_attributes","handle_pool_spec","node_output_shapes"]};

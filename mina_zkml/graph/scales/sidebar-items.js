@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["from_multipliers","multiplier_to_scale","scale_to_multiplier"],"struct":["Scale","VarScales"]};

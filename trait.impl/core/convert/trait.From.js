@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["mina_zkml",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.83.0/core/convert/trait.From.html\" title=\"trait core::convert::From\">From</a>&lt;&amp;Node&lt;TypedFact, <a class=\"struct\" href=\"https://doc.rust-lang.org/1.83.0/alloc/boxed/struct.Box.html\" title=\"struct alloc::boxed::Box\">Box</a>&lt;dyn TypedOp&gt;&gt;&gt; for <a class=\"struct\" href=\"mina_zkml/graph/model/struct.SerializableNode.html\" title=\"struct mina_zkml::graph::model::SerializableNode\">SerializableNode</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.83.0/core/convert/trait.From.html\" title=\"trait core::convert::From\">From</a>&lt;&amp;OutletId&gt; for <a class=\"struct\" href=\"mina_zkml/graph/model/struct.SerializableOutletId.html\" title=\"struct mina_zkml::graph::model::SerializableOutletId\">SerializableOutletId</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.83.0/core/convert/trait.From.html\" title=\"trait core::convert::From\">From</a>&lt;<a class=\"struct\" href=\"https://docs.rs/anyhow/1.0.91/anyhow/struct.Error.html\" title=\"struct anyhow::Error\">Error</a>&gt; for <a class=\"enum\" href=\"mina_zkml/graph/errors/enum.GraphError.html\" title=\"enum mina_zkml::graph::errors::GraphError\">GraphError</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.83.0/core/convert/trait.From.html\" title=\"trait core::convert::From\">From</a>&lt;OutletId&gt; for <a class=\"struct\" href=\"mina_zkml/graph/model/struct.SerializableOutletId.html\" title=\"struct mina_zkml::graph::model::SerializableOutletId\">SerializableOutletId</a>"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[1605]}

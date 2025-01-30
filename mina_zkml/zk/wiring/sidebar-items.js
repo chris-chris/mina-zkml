@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["COLUMNS","MIN_DOMAIN_SIZE","PERMUTS","WIRES"],"struct":["ModelCircuitBuilder"]};

@@ -12,34 +12,44 @@ use crate::graph::{
 use anyhow::Result;
 
 /// Maps ONNX operations to Kimchi circuit gates
+///
+/// This enum represents various ONNX operations and provides a method to convert them into
+/// Kimchi circuit gates. The operations include matrix multiplication, activation functions,
+/// and shape transformations.
 #[derive(Debug)]
 pub enum OnnxOperation {
-    /// Matrix multiplication (Gemm/MatMul)
     MatMul {
         m: usize, // Number of rows in first matrix
         n: usize, // Number of columns in second matrix
         k: usize, // Number of columns in first matrix/rows in second matrix
     },
-    /// ReLU activation
     Relu,
-    /// Sigmoid activation
     Sigmoid,
-    /// Addition operation
     Add,
-    /// EinSum operation (used for matrix operations)
     EinSum,
-    /// Max operation (used in ReLU)
     Max,
-    /// Constant value
     Const,
-    /// Remove axis operation (used in flattening)
     RmAxis,
-    /// Reshape operation
     Reshape,
 }
 
 impl OnnxOperation {
     /// Convert ONNX operation to Kimchi circuit gates
+    ///
+    /// This method converts an ONNX operation into a vector of Kimchi circuit gates starting
+    /// from the specified row. The conversion logic depends on the type of operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_row` - The starting row for the circuit gates.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a vector of `CircuitGate<Fp>` on success, or an error on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the conversion fails.
     pub fn to_circuit_gates(&self, start_row: usize) -> Result<Vec<CircuitGate<Fp>>> {
         match self {
             OnnxOperation::MatMul { m, n, k } => {
@@ -129,6 +139,18 @@ impl OnnxOperation {
 }
 
 /// Attempts to identify the ONNX operation type from a serialized node
+///
+/// This function takes a `SerializableNode` and attempts to identify the corresponding
+/// `OnnxOperation` based on the node's operation type and attributes.
+///
+/// # Arguments
+///
+/// * `node` - A reference to a `SerializableNode`.
+///
+/// # Returns
+///
+/// An `Option` containing the identified `OnnxOperation`, or `None` if the operation type
+/// is not recognized.
 pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
     match node.op_type {
         OperationType::Input => None,
@@ -159,6 +181,18 @@ pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
 }
 
 /// Identifies the operation type from a tract node
+///
+/// This function takes a `TypedNode` from the tract library and attempts to identify the
+/// corresponding `OperationType` based on the node's operation name.
+///
+/// # Arguments
+///
+/// * `node` - A reference to a `TypedNode`.
+///
+/// # Returns
+///
+/// An `Option` containing the identified `OperationType`, or `None` if the operation type
+/// is not recognized.
 pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
     // Check operation type based on the node's operation name
     let op_name = node.op.name();

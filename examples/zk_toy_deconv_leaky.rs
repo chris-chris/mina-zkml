@@ -13,16 +13,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         output: Visibility::Public,
     };
 
-    let model = Model::new("models/kmeans.onnx", &run_args, &visibility)?;
+    let model = Model::new("models/toy_deconv_leaky.onnx", &run_args, &visibility)?;
 
     // 2. Create prover system
     println!("Creating prover system...");
     let prover = ProverSystem::new(&model);
-    let verifier: mina_zkml::zk::proof::VerifierSystem = prover.verifier();
+    let verifier = prover.verifier();
 
     println!("\n=== Test Case 1: Valid Proof ===");
     // 3. Set an input
-    let input_vec1 = [vec![1.0f32, 1.0f32]];
+    let input_vec1 = [vec![1.0f32; 784]];
 
     // 4. Generate output and proof for first image
     let prover_output1 = prover.prove(&input_vec1)?;

@@ -209,6 +209,10 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found Conv operation");
             Some(OperationType::Conv)
         }
+        name if name == *"Deconv" => {
+            println!("Found Deconv operation");
+            Some(OperationType::Deconv)
+        }
         name if name == *"MatMul" || name == *"Gemm" => {
             println!("Found matrix operation: {}", name);
             Some(OperationType::MatMul)
@@ -224,6 +228,10 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
         name if name == *"Relu" => {
             println!("Found ReLU operation: {}", name);
             Some(OperationType::Relu)
+        }
+        name if name == *"LeakyRelu" => {
+            println!("Found LeakyRelu operation: {}", name);
+            Some(OperationType::LeakyRelu)
         }
         name if name == *"Sigmoid" => {
             println!("Found Sigmoid operation");

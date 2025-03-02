@@ -4,7 +4,9 @@
 //! nodes, operations, and connections within the graph.
 
 use super::errors::GraphError;
-use super::utilities::handle_pool_spec;
+use super::utilities::{
+    extract_pool_spec_from_attributes, handle_pool_spec, insert_pool_spec_attributes,
+};
 use crate::graph::tract_integration::*;
 use crate::graph::utilities::get_value_from_attributes;
 use crate::zk::operations::identify_tract_operation;
@@ -26,9 +28,9 @@ use tract_onnx::tract_core::internal::ElementWiseMiniOp;
 use tract_onnx::tract_core::ops::array::Gather;
 use tract_onnx::tract_core::ops::binary::TypedBinOp;
 use tract_onnx::tract_core::ops::cast::Cast;
-use tract_onnx::tract_core::ops::cnn::{Conv, MaxPool};
+use tract_onnx::tract_core::ops::cnn::{Conv, Deconv, KernelFormat, MaxPool};
 use tract_onnx::tract_core::ops::element_wise::ElementWiseOp;
-use tract_onnx::tract_core::ops::nn::{Reduce, Softmax, SoftmaxExp};
+use tract_onnx::tract_core::ops::nn::{LeakyRelu, Reduce, Softmax, SoftmaxExp};
 use tract_onnx::tract_core::ops::{konst::Const, scan::Scan, EvalOp};
 use types::{CustomBinOp, CustomDatumType, CustomElementWiseOp, CustomReducer};
 
@@ -37,6 +39,8 @@ pub type GraphLoadResult = (Graph<TypedFact, Box<dyn TypedOp>>, SymbolValues);
 
 /// Represents a node output connection as (node_index, output_slot)
 pub type Outlet = (usize, usize);
+
+pub const FLOAT_CORRECTION: u32 = 1000;
 
 /// Enum representing different types of operations that can be performed in the graph.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -59,6 +63,8 @@ pub enum OperationType {
     Cast,
     TypedBinOp,
     ElementWiseOp,
+    Deconv,
+    LeakyRelu,
 }
 
 /// Serializable version of OutletId
@@ -793,7 +799,86 @@ impl ParsedNodes {
                     Err(GraphError::InvalidNodeType)
                 }
             }
+            OperationType::Deconv => {
+                if inputs.len() != 3 {
+                    return Err(GraphError::InvalidInput(format!(
+                        "Deconv: input len({}) is invalid",
+                        inputs.len()
+                    )));
+                }
 
+                // parse input tensor "a"
+                let a_node = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+                let a_dims: Vec<usize> = match a_node {
+                    NodeType::Node(input) => input.out_dims.clone(),
+                    _ => return Err(GraphError::InvalidNodeType),
+                };
+                let a_f32: Vec<f32> = inputs[0].to_vec();
+                let a_tract = vec_to_tract_vec(&a_dims, &a_f32)?;
+
+                // parse deconv weight tensor "b"
+                let b_node = self
+                    .nodes
+                    .get(&node.inputs[1].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+                let b_dims: Vec<usize> = match b_node {
+                    NodeType::Node(input) => input.out_dims.clone(),
+                    _ => return Err(GraphError::InvalidNodeType),
+                };
+                let b_f32: Vec<f32> = inputs[1].to_vec();
+                let b_tract = vec_to_tract_vec(&b_dims, &b_f32)?;
+
+                // parse deconv bias tensor "c"
+                let c_node = self
+                    .nodes
+                    .get(&node.inputs[2].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+                let c_dims: Vec<usize> = match c_node {
+                    NodeType::Node(input) => input.out_dims.clone(),
+                    _ => return Err(GraphError::InvalidNodeType),
+                };
+                let c_f32: Vec<f32> = inputs[2].to_vec();
+                let c_tract = vec_to_tract_vec(&c_dims, &c_f32)?;
+
+                let kernel_format_vec: Vec<usize> =
+                    get_value_from_attributes("kernel_format", &node.attributes)?;
+                let kernel_format = match kernel_format_vec.first().copied().unwrap_or(3) {
+                    0 => KernelFormat::OIHW,
+                    1 => KernelFormat::HWIO,
+                    2 => KernelFormat::OHWI,
+                    _ => KernelFormat::default(),
+                };
+
+                let adjustments: Vec<usize> =
+                    get_value_from_attributes("adjustments", &node.attributes)?;
+
+                let group_vec: Vec<usize> = get_value_from_attributes("group", &node.attributes)?;
+                let group = *group_vec
+                    .first()
+                    .ok_or(GraphError::MissingAttributes("group".to_string()))?;
+                let pool_spec = extract_pool_spec_from_attributes(&node.attributes)?;
+
+                let deconv = Deconv {
+                    pool_spec,
+                    kernel_format,
+                    adjustments: adjustments.into(),
+                    group,
+                };
+
+                let eval = {
+                    let e = deconv.eval(smallvec![
+                        a_tract[0].clone(),
+                        b_tract[0].clone(),
+                        c_tract[0].clone()
+                    ])?;
+                    e[0].clone()
+                };
+                let res = tensor_to_vec::<f32>(&eval.into_tensor())?;
+                Ok(vec![res])
+            }
             OperationType::MatMul | OperationType::EinSum => {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInput(
@@ -862,6 +947,44 @@ impl ParsedNodes {
 
                 let result = inputs[0].iter().map(|&x| x.max(0.0)).collect();
                 Ok(vec![result])
+            }
+            OperationType::LeakyRelu => {
+                if inputs.len() != 1 {
+                    return Err(GraphError::InvalidInput(format!(
+                        "LeakyRelu: input len({}) is invalid",
+                        inputs.len()
+                    )));
+                }
+
+                // parse first input, a
+                let a = self
+                    .nodes
+                    .get(&node.inputs[0].0)
+                    .ok_or(GraphError::NodeNotFound)?;
+                let a_dims: Vec<usize> = match a {
+                    NodeType::Node(input) => input.out_dims.clone(),
+                    _ => return Err(GraphError::InvalidNodeType),
+                };
+                let a_f32: Vec<f32> = inputs[0].to_vec();
+                let a_tract = vec_to_tract_vec(&a_dims, &a_f32)?;
+
+                // get ElementWiseOp(LeakyRelu) and evaluate it
+                let element_wise_op = {
+                    let alpha = get_value_from_attributes("alpha", &node.attributes)?;
+                    let leaky_relu: Box<dyn ElementWiseMiniOp> = Box::new(LeakyRelu {
+                        alpha: alpha[0] as f32 / FLOAT_CORRECTION as f32,
+                    });
+                    ElementWiseOp(leaky_relu, None)
+                };
+                let eval: TValue = {
+                    let eval = element_wise_op.eval(a_tract)?;
+                    eval[0].clone()
+                };
+
+                let res_f32 = tensor_to_vec::<f32>(&eval.into_tensor())?;
+                let res: Vec<f32> = res_f32.to_vec();
+
+                Ok(vec![res])
             }
             OperationType::Sigmoid => {
                 if inputs.is_empty() {
@@ -1173,14 +1296,33 @@ impl From<&Node<TypedFact, Box<dyn TypedOp>>> for SerializableNode {
             attributes.insert("bin_op_idx".to_string(), vec![idx]);
         } else if let Some(op) = node.op.as_any().downcast_ref::<ElementWiseOp>() {
             // TODO: Consider all ElementWise ops
-            let idx = match CustomElementWiseOp::get_index_from_op(&*op.0) {
-                Some(idx) => idx,
-                None => {
-                    println!("ElementWiseOp: should be parsed between 0 to 24");
-                    0
-                }
-            };
-            attributes.insert("element_wise_op_idx".to_string(), vec![idx]);
+            if let Some(leaky) = op.0.as_any().downcast_ref::<LeakyRelu>() {
+                attributes.insert(
+                    "alpha".to_string(),
+                    vec![(leaky.alpha * FLOAT_CORRECTION as f32) as usize],
+                );
+            } else {
+                let idx = match CustomElementWiseOp::get_index_from_op(&*op.0) {
+                    Some(idx) => idx,
+                    None => {
+                        println!("ElementWiseOp: should be parsed between 0 to 24");
+                        0
+                    }
+                };
+                attributes.insert("element_wise_op_idx".to_string(), vec![idx]);
+            }
+        } else if let Some(op) = node.op.as_any().downcast_ref::<Deconv>() {
+            insert_pool_spec_attributes(&mut attributes, &op.pool_spec);
+            attributes.insert(
+                "kernel_format".to_string(),
+                vec![match op.kernel_format {
+                    KernelFormat::OIHW => 0,
+                    KernelFormat::HWIO => 1,
+                    KernelFormat::OHWI => 2,
+                }],
+            );
+            attributes.insert("adjustments".to_string(), op.adjustments.to_vec());
+            attributes.insert("group".to_string(), vec![op.group]);
         }
 
         SerializableNode {

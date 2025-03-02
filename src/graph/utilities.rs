@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use tract_onnx::prelude::{Node as OnnxNode, SymbolValues, TypedFact, TypedOp};
 use tract_onnx::tract_core::ops::cnn::PoolSpec;
 use tract_onnx::tract_core::ops::cnn::{KernelFormat, PaddingSpec};
+use tract_onnx::tract_hir::ops::nn::DataFormat;
 
 /// Handles the PoolSpec attributes and inserts them into the provided attributes HashMap.
 ///
@@ -622,4 +623,158 @@ pub fn get_value_from_attributes(
         .ok_or(GraphError::MissingAttributes(key.to_string()))?;
 
     Ok(value.clone())
+}
+
+/// Inserts the PoolSpec attributes into the provided HashMap.
+///
+/// This function processes the kernel shape, strides, dilations, padding,
+/// input channels, and output channels from the given `PoolSpec` and
+/// inserts them into the provided `attributes` HashMap. For fields that
+/// are stored in a `SmallVec`, this function converts them into a `Vec<usize>`.
+///
+/// # Arguments
+///
+/// * `attributes` - A mutable reference to a HashMap where the attributes will be stored.
+/// * `pool_spec` - A reference to the `PoolSpec` containing pooling specifications.
+pub fn insert_pool_spec_attributes(
+    attributes: &mut HashMap<String, Vec<usize>>,
+    pool_spec: &PoolSpec,
+) {
+    attributes.insert("kernel_shape".to_string(), pool_spec.kernel_shape.to_vec());
+
+    if let Some(strides) = &pool_spec.strides {
+        attributes.insert("strides".to_string(), strides.to_vec());
+    }
+
+    if let Some(dilations) = &pool_spec.dilations {
+        attributes.insert("dilations".to_string(), dilations.to_vec());
+    }
+
+    match &pool_spec.padding {
+        PaddingSpec::Explicit(before, after) => {
+            let mut pad = before.clone();
+            pad.extend(after.iter().cloned());
+            attributes.insert("padding".to_string(), pad.into_vec());
+        }
+        PaddingSpec::ExplicitOnnxPool(before, after, count_include_pad) => {
+            let mut pad = before.clone();
+            pad.extend(after.iter().cloned());
+            attributes.insert("padding".to_string(), pad.into_vec());
+            attributes.insert(
+                "count_include_pad".to_string(),
+                vec![*count_include_pad as usize],
+            );
+        }
+        _ => {
+            let kernel_rank = pool_spec.kernel_shape.len();
+            attributes.insert("padding".to_string(), vec![0; kernel_rank * 2]);
+        }
+    }
+
+    attributes.insert("input_channels".to_string(), vec![pool_spec.input_channels]);
+    attributes.insert(
+        "output_channels".to_string(),
+        vec![pool_spec.output_channels],
+    );
+
+    // Encode data_format as an integer: 0 => NCHW, 1 => NHWC, 2 => CHW, 3 => HWC.
+    let data_format_val = match pool_spec.data_format {
+        DataFormat::NCHW => 0,
+        DataFormat::NHWC => 1,
+        DataFormat::CHW => 2,
+        DataFormat::HWC => 3,
+    };
+    attributes.insert("data_format".to_string(), vec![data_format_val]);
+}
+
+/// Extracts a `PoolSpec` from the provided attributes HashMap.
+///
+/// This function reconstructs a `PoolSpec` by reading the kernel shape, optional strides,
+/// dilations, padding, input channels, and output channels from the given attributes.
+/// For the padding, it splits the stored vector into the `before` and `after` components.
+/// If the key `"count_include_pad"` is present, the padding is interpreted as
+/// `PaddingSpec::ExplicitOnnxPool`; otherwise, it is interpreted as `PaddingSpec::Explicit`.
+/// The `data_format` is set to its default value.
+///
+/// # Arguments
+///
+/// * `attributes` - A reference to a HashMap containing the PoolSpec attributes.
+///
+/// # Returns
+///
+/// * `PoolSpec` constructed from the attributes.
+///
+/// # Errors
+///
+/// Returns an error if a required attribute (such as `"kernel_shape"`, `"padding"`,
+/// `"input_channels"`, or `"output_channels"`) is missing or if the padding vector's length
+/// is not twice the kernel rank.
+pub fn extract_pool_spec_from_attributes(
+    attributes: &HashMap<String, Vec<usize>>,
+) -> Result<PoolSpec, GraphError> {
+    // Retrieve kernel shape (mandatory).
+    let kernel_shape = attributes
+        .get("kernel_shape")
+        .ok_or_else(|| GraphError::MissingAttributes("kernel_shape".to_string()))?
+        .clone();
+
+    // Optional strides and dilations.
+    let strides = attributes.get("strides").cloned();
+    let dilations = attributes.get("dilations").cloned();
+
+    // Retrieve and process padding.
+    let padding_vec = attributes
+        .get("padding")
+        .ok_or_else(|| GraphError::MissingAttributes("padding".to_string()))?;
+    let kernel_rank = kernel_shape.len();
+    if padding_vec.len() != kernel_rank * 2 {
+        return Err(GraphError::InvalidParams);
+    }
+    let before = padding_vec[0..kernel_rank].to_vec();
+    let after = padding_vec[kernel_rank..2 * kernel_rank].to_vec();
+
+    let padding = if attributes.contains_key("count_include_pad") {
+        let count_include_pad = attributes
+            .get("count_include_pad")
+            .and_then(|v| v.first())
+            .cloned()
+            .unwrap_or(0)
+            != 0;
+        PaddingSpec::ExplicitOnnxPool(before.into(), after.into(), count_include_pad)
+    } else {
+        PaddingSpec::Explicit(before.into(), after.into())
+    };
+
+    // Retrieve input and output channels (mandatory).
+    let input_channels = *attributes
+        .get("input_channels")
+        .and_then(|v| v.first())
+        .ok_or_else(|| GraphError::MissingAttributes("input_channels".to_string()))?;
+    let output_channels = *attributes
+        .get("output_channels")
+        .and_then(|v| v.first())
+        .ok_or_else(|| GraphError::MissingAttributes("output_channels".to_string()))?;
+
+    // Parse data_format from attribute. If missing or invalid, default to NCHW.
+    let data_format = match attributes
+        .get("data_format")
+        .and_then(|v| v.first())
+        .cloned()
+    {
+        Some(0) => DataFormat::NCHW,
+        Some(1) => DataFormat::NHWC,
+        Some(2) => DataFormat::CHW,
+        Some(3) => DataFormat::HWC,
+        _ => DataFormat::default(),
+    };
+
+    Ok(PoolSpec {
+        data_format,
+        kernel_shape: kernel_shape.into(),
+        padding,
+        dilations: dilations.map(|v| v.into()),
+        strides: strides.map(|v| v.into()),
+        input_channels,
+        output_channels,
+    })
 }

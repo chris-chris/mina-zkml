@@ -85,11 +85,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proof_system = ProverSystem::new(&model);
 
     println!("\n=== Test Case 1: Valid Proof for First Image ===");
-    // Load first image
+    // 3. Set an input
     let input1 = preprocess_image("models/data/1052.png")?;
     let input_vec1 = vec![input1];
 
-    // Generate output and proof for first image
+    // 4. Generate output and proof for first image
     let prover_output1 = proof_system.prove(&input_vec1)?;
     let output1 = prover_output1
         .output
@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("First image prediction:");
     print_prediction_info(&output1[0]);
 
-    // Verify proof for first image
+    // 5. Verify proof
     let is_valid1 =
         proof_system
             .verifier()

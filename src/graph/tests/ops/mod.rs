@@ -1,5 +1,6 @@
 mod axis_op;
 mod convolution;
+mod deconv;
 mod element_wise_op;
 mod gather;
 mod max_pool;

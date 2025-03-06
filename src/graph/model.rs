@@ -59,6 +59,8 @@ pub enum OperationType {
     Cast,
     TypedBinOp,
     ElementWiseOp,
+    Identity,
+    Concat,
 }
 
 /// Serializable version of OutletId
@@ -863,6 +865,95 @@ impl ParsedNodes {
                 let result = inputs[0].iter().map(|&x| x.max(0.0)).collect();
                 Ok(vec![result])
             }
+            OperationType::Identity => {
+                if inputs.len() != 1 {
+                    return Err(GraphError::InvalidInput(format!(
+                        "Identity: expected exactly 1 input, got {}",
+                        inputs.len()
+                    )));
+                }
+                // Verify input shape matches output shape
+                let input_size = inputs[0].len();
+                let expected_size = node.out_dims.iter().product::<usize>();
+                if input_size != expected_size {
+                    return Err(GraphError::InvalidInput(format!(
+                        "Identity: input size {} does not match expected size {}",
+                        input_size,
+                        expected_size
+                    )));
+                }
+                Ok(vec![inputs[0].clone()])
+            }
+
+            OperationType::Concat => {
+                if inputs.is_empty() {
+                    return Err(GraphError::InvalidInput("Concat: Empty input".to_string()));
+                }
+
+                let axis_i64 = node.attributes
+                    .get("axis")
+                    .and_then(|v| v.first())
+                    .map(|&x| x as i64)
+                    .ok_or_else(|| GraphError::InvalidInput("Concat: Missing axis attribute".to_string()))?;
+
+                // Get input dimensions from the first input node
+                let input_dims = if let Some(NodeType::Node(input)) = self.nodes.get(&node.inputs[0].0) {
+                    input.out_dims.len()
+                } else {
+                    return Err(GraphError::InvalidInput("Concat: Invalid input node".to_string()));
+                };
+
+                // Convert negative axis to positive
+                let axis = if axis_i64 < 0 {
+                    ((input_dims as i64) + axis_i64) as usize
+                } else {
+                    axis_i64 as usize
+                };
+
+                if axis >= input_dims {
+                    return Err(GraphError::InvalidInput(format!(
+                        "Concat: axis {} is out of bounds for tensor with {} dimensions",
+                        axis,
+                        input_dims
+                    )));
+                }
+
+                // Verify all inputs have compatible shapes
+                let base_shape = if let Some(NodeType::Node(input)) = self.nodes.get(&node.inputs[0].0) {
+                    input.out_dims.clone()
+                } else {
+                    return Err(GraphError::InvalidInput("Concat: Cannot get base shape".to_string()));
+                };
+
+                for &(input_idx, _) in node.inputs.iter().skip(1) {
+                    if let Some(NodeType::Node(input)) = self.nodes.get(&input_idx) {
+                        let shape = &input.out_dims;
+                        if shape.len() != base_shape.len() {
+                            return Err(GraphError::InvalidInput(format!(
+                                "Concat: Input has different rank: {} vs {}",
+                                shape.len(),
+                                base_shape.len()
+                            )));
+                        }
+                        for (i, (&s1, &s2)) in base_shape.iter().zip(shape.iter()).enumerate() {
+                            if i != axis && s1 != s2 {
+                                return Err(GraphError::InvalidInput(format!(
+                                    "Concat: Incompatible shapes at dimension {}: {} vs {}",
+                                    i, s1, s2
+                                )));
+                            }
+                        }
+                    }
+                }
+
+                // Concatenate tensors along the specified axis
+                let mut result = Vec::new();
+                for input in inputs {
+                    result.extend_from_slice(&input);
+                }
+
+                Ok(vec![result])
+            }
             OperationType::Sigmoid => {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInput(
@@ -891,6 +982,7 @@ impl ParsedNodes {
                     })
                     .collect()])
             }
+
             OperationType::RmAxis => {
                 if inputs.is_empty() {
                     return Err(GraphError::InvalidInput(
@@ -1631,4 +1723,4 @@ impl Model {
         }
         Some(result)
     }
-}
+            }

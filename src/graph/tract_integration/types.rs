@@ -12,6 +12,7 @@ use tract_onnx::tract_core::ops::binary::BinMiniOp;
 use tract_onnx::tract_core::ops::math::Rem;
 use tract_onnx::tract_core::ops::math::*;
 use tract_onnx::tract_core::ops::nn::Reducer;
+use tract_onnx::tract_hir::ops::identity::Identity;
 
 type ElementWiseOpEntry = (&'static str, fn() -> Box<dyn ElementWiseMiniOp>, usize);
 
@@ -143,7 +144,7 @@ pub enum CustomBinOp {
 
 impl CustomBinOp {
     /// A static mapping of binary operation names, Tract `BinMiniOp`, and their indices.
-    pub const BIN_OP_MAP: &'static [(&'static str, &dyn BinMiniOp, usize)] = &[
+    pub const BIN_OP_MAP: &'static [(&'static str, &'static dyn BinMiniOp, usize)] = &[
         ("Add", &Add, 0),
         ("Sub", &Sub, 1),
         ("Mul", &Mul, 2),

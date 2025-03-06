@@ -31,6 +31,10 @@ pub enum OnnxOperation {
     Const,
     RmAxis,
     Reshape,
+    Identity,
+    Concat {
+        axis: i64, // Axis along which to concatenate
+    },
 }
 
 impl OnnxOperation {
@@ -130,8 +134,13 @@ impl OnnxOperation {
                 Ok(gates)
             }
 
-            OnnxOperation::Const | OnnxOperation::RmAxis | OnnxOperation::Reshape => {
-                // These operations don't need any gates as they're just shape operations
+            OnnxOperation::Const | OnnxOperation::RmAxis | OnnxOperation::Reshape | OnnxOperation::Identity => {
+                // These operations don't need any gates as they're just shape/identity operations
+                Ok(vec![])
+            }
+
+            OnnxOperation::Concat { .. } => {
+                // Concatenation is just a shape operation in circuit context
                 Ok(vec![])
             }
         }
@@ -155,6 +164,19 @@ pub fn identify_operation(node: &SerializableNode) -> Option<OnnxOperation> {
     match node.op_type {
         OperationType::Input => None,
         OperationType::Const => Some(OnnxOperation::Const),
+        OperationType::Identity => Some(OnnxOperation::Identity),
+        OperationType::Concat => {
+            let axis = if let Some(axis_vec) = node.attributes.get("axis") {
+                if let Some(&axis) = axis_vec.first() {
+                    axis as i64
+                } else {
+                    0
+                }
+            } else {
+                0
+            };
+            Some(OnnxOperation::Concat { axis })
+        },
         OperationType::MatMul => {
             if node.inputs.len() == 2 {
                 let m = node.out_dims[0];
@@ -273,6 +295,14 @@ pub fn identify_tract_operation(node: &TypedNode) -> Option<OperationType> {
             println!("Found Input operation");
             Some(OperationType::Softmax)
         }
+        name if name == *"Identity" => {
+            println!("Found Identity operation");
+            Some(OperationType::Identity)
+        }
+        name if name == *"Concat" => {
+            println!("Found Concat operation");
+            Some(OperationType::Concat)
+        }
         name => {
             println!("Unknown operation: {}", name);
             None
@@ -290,6 +320,17 @@ mod tests {
         let op = OnnxOperation::MatMul { m: 2, n: 2, k: 2 };
         let gates = op.to_circuit_gates(0).unwrap();
         assert!(!gates.is_empty());
+        
+        // Check the structure of generated gates
+        assert_eq!(gates.len(), 12); // 2x2 matrix multiplication needs 6 gates
+        
+        // First row of gates should be multiplication and addition
+        assert_eq!(gates[0].typ, GateType::ForeignFieldMul);
+        assert_eq!(gates[1].typ, GateType::ForeignFieldMul);
+        
+        // Check wire configurations
+        assert_eq!(gates[0].wires[0], Wire::new(0, 0));
+        assert_eq!(gates[1].wires[0], Wire::new(1, 0));
     }
 
     #[test]
@@ -299,6 +340,10 @@ mod tests {
         assert_eq!(gates.len(), 2);
         assert_eq!(gates[0].typ, GateType::RangeCheck0);
         assert_eq!(gates[1].typ, GateType::Generic);
+        
+        // Check wire configurations
+        assert_eq!(gates[0].wires[0], Wire::new(0, 0));
+        assert_eq!(gates[1].wires[0], Wire::new(1, 0));
     }
 
     #[test]
@@ -307,6 +352,28 @@ mod tests {
         let gates = op.to_circuit_gates(0).unwrap();
         assert_eq!(gates.len(), 1);
         assert_eq!(gates[0].typ, GateType::Generic);
+        assert_eq!(gates[0].wires[0], Wire::new(0, 0));
+    }
+
+    #[test]
+    fn test_identity_operation_gates() {
+        let op = OnnxOperation::Identity;
+        let gates = op.to_circuit_gates(0).unwrap();
+        // Identity operation should not generate any gates as it's a pass-through operation
+        assert!(gates.is_empty());
+    }
+
+    #[test]
+    fn test_concat_operation_gates() {
+        let op = OnnxOperation::Concat { axis: 1 };
+        let gates = op.to_circuit_gates(0).unwrap();
+        // Concat operation should not generate any gates as it's just a shape operation
+        assert!(gates.is_empty());
+
+        // Test with different axis value
+        let op2 = OnnxOperation::Concat { axis: 0 };
+        let gates2 = op2.to_circuit_gates(0).unwrap();
+        assert!(gates2.is_empty());
     }
 
     #[test]
@@ -385,6 +452,57 @@ mod tests {
         match identify_operation(&const_node) {
             Some(OnnxOperation::Const) => (),
             _ => panic!("Expected Const operation"),
+        }
+
+        // Test Identity node
+        let identity_node = SerializableNode {
+            op_type: OperationType::Identity,
+            inputs: vec![(0, 0)],
+            out_dims: vec![3, 4], // Testing with specific dimensions
+            out_scale: 1,
+            id: 0,
+            op_params: None,
+            attributes: HashMap::new(),
+        };
+        match identify_operation(&identity_node) {
+            Some(OnnxOperation::Identity) => (),
+            _ => panic!("Expected Identity operation"),
+        }
+
+        // Test Concat node with specific axis value
+        let mut attributes = HashMap::new();
+        attributes.insert("axis".to_string(), vec![1]);
+        let concat_node = SerializableNode {
+            op_type: OperationType::Concat,
+            inputs: vec![(0, 0), (1, 0)],
+            out_dims: vec![2, 6], // Testing concatenation along axis 1
+            out_scale: 1,
+            id: 0,
+            op_params: None,
+            attributes,
+        };
+        match identify_operation(&concat_node) {
+            Some(OnnxOperation::Concat { axis }) => {
+                assert_eq!(axis, 1);
+            },
+            _ => panic!("Expected Concat operation"),
+        }
+
+        // Test Concat node with default axis
+        let concat_node_no_axis = SerializableNode {
+            op_type: OperationType::Concat,
+            inputs: vec![(0, 0), (1, 0)],
+            out_dims: vec![4, 3],
+            out_scale: 1,
+            id: 0,
+            op_params: None,
+            attributes: HashMap::new(),
+        };
+        match identify_operation(&concat_node_no_axis) {
+            Some(OnnxOperation::Concat { axis }) => {
+                assert_eq!(axis, 0); // Should default to axis 0
+            },
+            _ => panic!("Expected Concat operation"),
         }
     }
 }
